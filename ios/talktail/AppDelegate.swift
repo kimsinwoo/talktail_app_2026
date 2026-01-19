@@ -40,7 +40,17 @@ class ReactNativeDelegate: RCTDefaultReactNativeFactoryDelegate {
 
   override func bundleURL() -> URL? {
 #if DEBUG
-    RCTBundleURLProvider.sharedSettings().jsBundleURL(forBundleRoot: "index")
+    // 개발 모드: Metro 번들러에서 번들 로드
+    let bundleURLProvider = RCTBundleURLProvider.sharedSettings()
+    
+    // 실기기 테스트를 위해 localhost 대신 Mac의 IP 주소 사용
+    // Xcode에서 Scheme의 Arguments에 METRO_IP 환경 변수를 추가하거나
+    // 여기서 직접 IP 주소를 설정할 수 있습니다
+    // 예: bundleURLProvider.jsLocation = "192.168.0.23"
+    
+    // 기본적으로 RCTBundleURLProvider는 자동으로 감지하지만,
+    // 실기기에서는 수동 설정이 필요할 수 있습니다
+    return bundleURLProvider.jsBundleURL(forBundleRoot: "index")
 #else
     Bundle.main.url(forResource: "main", withExtension: "jsbundle")
 #endif
