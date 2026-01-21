@@ -37,6 +37,8 @@ import WalkHistoryScreen from './src/screens/WalkHistoryScreen';
 import HealthReportScreen from './src/screens/HealthReportScreen';
 import HealthCheckResultScreen from './src/screens/HealthCheckResultScreen';
 import PetRegisterScreen from './src/screens/PetRegisterScreen';
+import {PetManagementScreen} from './src/screens/PetManagementScreen';
+import PetEditScreen from './src/screens/PetEditScreen';
 import HealthCheckStartScreen from './src/screens/HealthCheckStartScreen';
 import CheckoutScreen from './src/screens/CheckoutScreen';
 import OrderCompleteScreen from './src/screens/OrderCompleteScreen';
@@ -49,7 +51,6 @@ export type TabParamList = {
   Home: undefined;
   Monitoring: {petId?: string; petName?: string; petImage?: string} | undefined;
   Store: {category?: string} | undefined;
-  Device: undefined;
   MyPage: undefined;
 };
 
@@ -83,6 +84,8 @@ export type RootStackParamList = {
       }
     | undefined;
   PetRegister: undefined;
+  PetManagement: undefined;
+  PetEdit: {pet: any} | undefined;
   HubConsole: {hubId?: string} | undefined;
   DeviceRegister: {hubAddress: string} | undefined;
 };
@@ -499,16 +502,6 @@ function App(): React.JSX.Element {
                             )}
                           </Tab.Screen>
                           <Tab.Screen
-                            name="Device"
-                            options={{
-                              tabBarLabel: '기기관리',
-                              tabBarIcon: ({color, size}) => (
-                                <Settings size={size} color={color} />
-                              ),
-                            }}>
-                            {() => <DeviceManagementScreen />}
-                          </Tab.Screen>
-                          <Tab.Screen
                             name="MyPage"
                             options={{
                               tabBarLabel: '마이페이지',
@@ -544,6 +537,8 @@ function App(): React.JSX.Element {
                     <Stack.Screen name="HealthCheckStart" component={HealthCheckStartScreen} />
                     <Stack.Screen name="HealthCheckResult" component={HealthCheckResultScreen} />
                     <Stack.Screen name="PetRegister" component={PetRegisterScreen} />
+                    <Stack.Screen name="PetManagement" component={PetManagementScreen} />
+                    <Stack.Screen name="PetEdit" component={PetEditScreen} />
                     <Stack.Screen name="HubConsole" component={HubConsoleScreen} />
                     <Stack.Screen name="DeviceRegister" component={DeviceRegisterScreen} />
                   </Stack.Navigator>

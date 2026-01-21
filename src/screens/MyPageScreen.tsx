@@ -40,6 +40,14 @@ const menuItems = [
     bgColor: '#FEF0EB',
   },
   {
+    id: 'pets',
+    icon: PawPrint,
+    title: '반려동물 관리',
+    subtitle: '반려동물 등록 및 수정',
+    color: '#2E8B7E',
+    bgColor: '#E7F5F4',
+  },
+  {
     id: 'orders',
     icon: Package,
     title: '주문 내역',
@@ -143,6 +151,9 @@ export function MyPageScreen({onAddToCart}: MyPageScreenProps) {
     switch (menuId) {
       case 'profile':
         (navigation as any).navigate('ProfileSettings');
+        break;
+      case 'pets':
+        (navigation as any).navigate('PetManagement');
         break;
       case 'orders':
         (navigation as any).navigate('OrderHistory');
