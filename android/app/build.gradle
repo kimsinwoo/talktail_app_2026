@@ -82,7 +82,8 @@ android {
         applicationId "com.talktail"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 24
+        // 기존 설치된 앱(versionCode 32)보다 낮으면 INSTALL_FAILED_VERSION_DOWNGRADE 발생
+        versionCode 33
         versionName "1.0"
     }
     signingConfigs {
@@ -96,6 +97,9 @@ android {
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
+            // 기존 기기에 설치된 com.talktail(서명이 다른 APK)과 충돌 방지
+            applicationIdSuffix ".debug"
+            versionNameSuffix "-debug"
         }
         release {
             // Caution! In production, you need to generate your own keystore file.

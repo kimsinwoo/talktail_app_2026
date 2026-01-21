@@ -9,9 +9,13 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import {useRoute} from '@react-navigation/native';
+import type {RouteProp} from '@react-navigation/native';
 import {apiService} from '../services/ApiService';
 import Toast from 'react-native-toast-message';
 import {hubSocketService} from '../services/HubSocketService';
+import {bleService} from '../services/BLEService';
+import type {RootStackParamList} from '../../App';
 
 type Hub = {id: string; address: string; name: string};
 type Device = {id: string; address: string; name: string; hub_address?: string; hubName?: string};
@@ -19,6 +23,8 @@ type ConsoleLine = {id: string; ts: string; kind: string; text: string; data?: a
 type Point = {t: number; hr: number; spo2: number; temp: number; battery: number};
 
 export function HubConsoleScreen() {
+  const route = useRoute<RouteProp<RootStackParamList, 'HubConsole'>>();
+  const initialHubId = route.params?.hubId;
   const [mqttStatus, setMqttStatus] = useState<string>('MQTT 상태 확인 중…');
   const [socketStatus, setSocketStatus] = useState<string>('Socket 연결 확인 중…');
   const [hubs, setHubs] = useState<Hub[]>([]);
@@ -40,6 +46,9 @@ export function HubConsoleScreen() {
   const [connectedDevicesByHub, setConnectedDevicesByHub] = useState<Record<string, string[]>>({});
   const [latestTelemetryByDevice, setLatestTelemetryByDevice] = useState<Record<string, any>>({});
   const [pointsByDevice, setPointsByDevice] = useState<Record<string, Point[]>>({});
+
+  // ✅ 허브 상태(앱 판정): checking/online/offline
+  const [hubStatusByHub, setHubStatusByHub] = useState<Record<string, 'unknown' | 'checking' | 'online' | 'offline'>>({});
 
   const consoleRef = useRef<ScrollView | null>(null);
   const autoScrollRef = useRef(true);
@@ -257,7 +266,17 @@ export function HubConsoleScreen() {
         })) || [];
         if (!cancelled) {
           setHubs(list);
-          if (!selectedHub && list[0]?.address) setSelectedHub(list[0].address);
+          // ✅ DeviceManagement에서 hubId를 넘긴 경우 우선 선택
+          if (typeof initialHubId === 'string' && initialHubId.length > 0) {
+            const found = list.find(h => h.address === initialHubId);
+            if (found) {
+              setSelectedHub(found.address);
+            } else if (!selectedHub && list[0]?.address) {
+              setSelectedHub(list[0].address);
+            }
+          } else if (!selectedHub && list[0]?.address) {
+            setSelectedHub(list[0].address);
+          }
         }
       } catch (e: any) {
         if (!cancelled) Toast.show({type: 'error', text1: '허브 조회 실패', text2: e?.response?.data?.message || '허브 목록을 불러올 수 없습니다.'});
@@ -333,6 +352,33 @@ export function HubConsoleScreen() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedHub, socketStatus]);
+
+  // ✅ 주기적 state:hub 폴링 + offline 시 BLE fallback
+  useEffect(() => {
+    if (!selectedHub) return;
+    const stop = hubSocketService.startHubPolling(selectedHub, {intervalMs: 30000, timeoutMs: 10000});
+
+    const offStatus = hubSocketService.on('HUB_STATUS', (p: any) => {
+      const hubId = typeof p?.hubId === 'string' ? p.hubId : '';
+      const status = p?.status;
+      if (!hubId) return;
+      if (status === 'checking' || status === 'online' || status === 'offline' || status === 'unknown') {
+        setHubStatusByHub(prev => ({...prev, [hubId]: status}));
+      }
+    });
+    const offOffline = hubSocketService.on('HUB_OFFLINE', (p: any) => {
+      const hubId = typeof p?.hubId === 'string' ? p.hubId : '';
+      if (!hubId) return;
+      // ✅ 허브 오프라인이면 자동으로 BLE 1:1 연결(저장된 디바이스) 시도
+      bleService.fallbackConnectOnce(10).catch(() => {});
+    });
+
+    return () => {
+      stop();
+      offStatus();
+      offOffline();
+    };
+  }, [selectedHub]);
 
   useEffect(() => {
     // socket 이벤트 구독: hub_project/front 와 동일 이벤트로 콘솔/상태 반영
@@ -438,6 +484,7 @@ export function HubConsoleScreen() {
   const sendControl = async (
     action:
       | 'connect_devices'
+      | 'connect_all_devices'
       | 'start_measurement'
       | 'stop_measurement'
       | 'blink'
@@ -461,6 +508,12 @@ export function HubConsoleScreen() {
       let deviceId = selectedDevice || 'HUB';
       let command: any = {action};
 
+      // ✅ 디바이스 전체 연결: 웹(front)과 동일하게 connect_devices(20초) 명령을 "모달 없이" 보냄
+      if (action === 'connect_all_devices') {
+        deviceId = 'HUB';
+        command = {action: 'connect_devices', duration: 20000};
+      }
+
       if (action === 'check_hub_state') {
         deviceId = 'HUB';
         command = {raw_command: 'state:hub'};
@@ -478,6 +531,16 @@ export function HubConsoleScreen() {
 
       hubSocketService.controlRequest({hubId: selectedHub, deviceId, command, requestId});
       Toast.show({type: 'success', text1: '명령 전송', text2: `requestId: ${requestId}`, position: 'bottom'});
+
+      // ✅ 전체 연결(connect_devices) 중에는 state:hub를 추가로 보내면 허브 흐름이 꼬일 수 있어 억제
+      if (action === 'connect_all_devices' || action === 'connect_devices') {
+        // connect_devices(duration 20s) 동안만 state:hub 억제 (여유 2s)
+        hubSocketService.suppressStateHub(selectedHub, 22000);
+      }
+      // ✅ 상태체크만 probeHub로 수행
+      if (action === 'check_hub_state') {
+        hubSocketService.probeHub(selectedHub, {timeoutMs: 10000, reason: action}).catch(() => {});
+      }
 
       if (action === 'connect_devices') {
         // 다음 CONNECTED_DEVICES 수신 시 등록 모달을 띄우기 위해 플래그 설정
@@ -727,6 +790,13 @@ export function HubConsoleScreen() {
 
           <TouchableOpacity
             style={[styles.button, styles.buttonGhost]}
+            onPress={() => sendControl('connect_all_devices')}
+            activeOpacity={0.85}>
+            <Text style={[styles.buttonText, styles.buttonGhostText]}>전체 연결</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.button, styles.buttonGhost]}
             onPress={() => {
               ensureDraftsForMacs(connectedNow);
               setSelectedRegisterMacs({});
@@ -844,7 +914,7 @@ export function HubConsoleScreen() {
                     style={[
                       styles.deviceRow,
                       selectedDevice === mac ? {borderColor: '#2563EB'} : null,
-                    ]}>
+                    ]}
                     onPress={() => setSelectedDevice(mac)}
                     activeOpacity={0.85}>
                     <Text style={styles.deviceMac}>
@@ -901,7 +971,9 @@ export function HubConsoleScreen() {
             autoCorrect={false}
           />
           <ScrollView
-            ref={r => (consoleRef.current = r)}
+            ref={r => {
+              consoleRef.current = r;
+            }}
             style={styles.console}
             contentContainerStyle={styles.consoleContent}
             nestedScrollEnabled

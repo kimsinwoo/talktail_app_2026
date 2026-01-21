@@ -41,6 +41,7 @@ import HealthCheckStartScreen from './src/screens/HealthCheckStartScreen';
 import CheckoutScreen from './src/screens/CheckoutScreen';
 import OrderCompleteScreen from './src/screens/OrderCompleteScreen';
 import {HubConsoleScreen} from './src/screens/HubConsoleScreen';
+import {DeviceRegisterScreen} from './src/screens/DeviceRegisterScreen';
 import {hasToken, saveConnectedDeviceId} from './src/utils/storage';
 import {apiService} from './src/services/ApiService';
 
@@ -82,7 +83,8 @@ export type RootStackParamList = {
       }
     | undefined;
   PetRegister: undefined;
-  HubConsole: undefined;
+  HubConsole: {hubId?: string} | undefined;
+  DeviceRegister: {hubAddress: string} | undefined;
 };
 
 const Tab = createBottomTabNavigator<TabParamList>();
@@ -543,6 +545,7 @@ function App(): React.JSX.Element {
                     <Stack.Screen name="HealthCheckResult" component={HealthCheckResultScreen} />
                     <Stack.Screen name="PetRegister" component={PetRegisterScreen} />
                     <Stack.Screen name="HubConsole" component={HubConsoleScreen} />
+                    <Stack.Screen name="DeviceRegister" component={DeviceRegisterScreen} />
                   </Stack.Navigator>
                 </NavigationContainer>
         <Toast />

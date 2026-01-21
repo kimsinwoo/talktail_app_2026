@@ -13,3 +13,10 @@ export const getBackendBaseUrl = (): string => 'https://creamoff.o-r.kr';
 
 // 호환용(기존 코드에서 참조할 수 있어 유지)
 export const BACKEND_API_URL = getBackendBaseUrl();
+
+// ✅ Socket.IO 서버 주소
+export const SOCKET_IO_URL = 'https://creamoff.o-r.kr';
+
+// ✅ MQTT Broker (WebSocket)
+// - 웹(front)에서 MQTT over WebSocket을 쓰는 것과 동일한 방식으로 앱에서도 직접 구독 가능
+export const MQTT_BROKER_WS_URL = 'ws://44.200.80.221:9001';
