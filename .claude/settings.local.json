@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx react-native run-android:*)",
+      "Bash(wmic logicaldisk:*)"
+    ]
+  }
+}

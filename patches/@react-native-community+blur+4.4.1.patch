@@ -1,0 +1,19 @@
+diff --git a/node_modules/@react-native-community/blur/android/build.gradle b/node_modules/@react-native-community/blur/android/build.gradle
+index acb9a88..c5b307b 100644
+--- a/node_modules/@react-native-community/blur/android/build.gradle
++++ b/node_modules/@react-native-community/blur/android/build.gradle
+@@ -10,7 +10,13 @@ buildscript {
+ }
+ 
+ def isNewArchitectureEnabled() {
+-  return rootProject.hasProperty("newArchEnabled") &&  rootProject.getProperty("newArchEnabled") == "true"
++  // React Native 0.82+ always has new architecture enabled
++  // Check for explicit opt-out (for older RN versions) or assume enabled for RN 0.82+
++  if (rootProject.hasProperty("newArchEnabled")) {
++    return rootProject.getProperty("newArchEnabled") == "true"
++  }
++  // If property doesn't exist, we're on RN 0.82+ where new arch is always enabled
++  return true
+ }
+ 
+ apply plugin: 'com.android.library'
