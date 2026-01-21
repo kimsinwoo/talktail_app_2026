@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React, {useState, useEffect} from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
+  ActivityIndicator,
 } from 'react-native';
 import {
   Wifi,
@@ -19,11 +20,13 @@ import {
   Calendar,
   Phone,
   PawPrint,
+  Plus,
 } from 'lucide-react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
 import {useNavigation} from '@react-navigation/native';
 import type {Pet as RegisteredPet} from '../store/userStore';
+import {hubStatusStore} from '../store/hubStatusStore';
 
 interface HomeScreenProps {
   pets: RegisteredPet[];
@@ -44,6 +47,18 @@ export function HomeScreen({
 }: HomeScreenProps) {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const navigation = useNavigation<any>();
+  
+  // ✅ 전역 허브 스토어 사용 (실시간 구독)
+  const hubs = hubStatusStore(state => state.hubs);
+  const hubsLoading = hubStatusStore(state => state.hubsLoading);
+  const refreshHubs = hubStatusStore(state => state.refreshHubs);
+  const hubStatusMap = hubStatusStore(state => state.hubStatus); // 허브 상태 맵 구독
+  
+  useEffect(() => {
+    // ✅ 컴포넌트 마운트 시 허브 스토어 초기화 및 목록 로드
+    hubStatusStore.getState().initialize();
+  }, []);
+  
   const navigateTo = (routeName: string, params?: Record<string, unknown>) => {
     const parent = navigation.getParent ? navigation.getParent() : null;
     const nav = parent ?? navigation;
@@ -68,7 +83,11 @@ export function HomeScreen({
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
-    await new Promise(resolve => setTimeout(resolve, 1500));
+    // ✅ 허브 목록도 함께 새로고침
+    await Promise.all([
+      new Promise(resolve => setTimeout(resolve, 1500)),
+      refreshHubs().catch(() => {}),
+    ]);
     setIsRefreshing(false);
     Toast.show({
       type: 'success',
@@ -155,36 +174,80 @@ export function HomeScreen({
         {/* Hub Status Card */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>허브 상태</Text>
-          <TouchableOpacity
-            style={styles.hubCard}
-            activeOpacity={0.85}
-            onPress={() => navigateTo('HubConsole')}>
-            <View style={styles.hubCardContent}>
-              <View style={styles.hubCardLeft}>
-                <View style={styles.hubIconContainer}>
-                  <Wifi size={22} color="#2E8B7E" />
-                </View>
-                <View>
-                  <Text style={styles.hubName}>거실 허브</Text>
-                  <View style={styles.hubStatusRow}>
-                    <View style={styles.hubStatusDot} />
-                    <Text style={styles.hubStatusText}>연결됨</Text>
-                  </View>
-                  <Text style={styles.hubHintText}>눌러서 허브 로그 보기</Text>
-                </View>
-              </View>
-              <View style={styles.hubCardRight}>
-                <View style={styles.hubInfoItem}>
-                  <Power size={18} color="#2E8B7E" />
-                  <Text style={styles.hubInfoText}>ON</Text>
-                </View>
-                <View style={styles.hubInfoItem}>
-                  <Wifi size={18} color="#2E8B7E" />
-                  <Text style={styles.hubInfoText}>강함</Text>
-                </View>
-              </View>
+          {hubsLoading ? (
+            <View style={styles.hubCard}>
+              <ActivityIndicator size="small" color="#2E8B7E" />
+              <Text style={[styles.hubHintText, {marginTop: 8}]}>허브 목록 불러오는 중...</Text>
             </View>
-          </TouchableOpacity>
+          ) : hubs.length === 0 ? (
+            <TouchableOpacity
+              style={styles.hubCard}
+              activeOpacity={0.85}
+              onPress={() => {
+                // Tab 네비게이터의 'Device' 탭으로 이동
+                const parent = navigation.getParent ? navigation.getParent() : null;
+                const nav = parent ?? navigation;
+                nav.navigate('Device');
+              }}>
+              <View style={styles.hubCardContent}>
+                <View style={styles.hubCardLeft}>
+                  <View style={styles.hubIconContainer}>
+                    <Plus size={22} color="#2E8B7E" />
+                  </View>
+                  <View>
+                    <Text style={styles.hubName}>허브 등록</Text>
+                    <Text style={styles.hubHintText}>등록된 허브가 없습니다</Text>
+                  </View>
+                </View>
+                <ChevronRight size={20} color="#888888" />
+              </View>
+            </TouchableOpacity>
+          ) : (
+            hubs.map(hub => {
+              // ✅ 구독된 허브 상태 맵에서 직접 가져오기 (실시간 업데이트)
+              const status = hubStatusMap[hub.address] || 'unknown';
+              const statusText = status === 'online' ? '온라인' : status === 'offline' ? '오프라인' : '확인중';
+              const statusColor = status === 'online' ? '#2E8B7E' : status === 'offline' ? '#F03F3F' : '#FFB02E';
+              
+              return (
+                <TouchableOpacity
+                  key={hub.address}
+                  style={styles.hubCard}
+                  activeOpacity={0.85}
+                  onPress={() => {
+                // Tab 네비게이터의 'Device' 탭으로 이동
+                const parent = navigation.getParent ? navigation.getParent() : null;
+                const nav = parent ?? navigation;
+                nav.navigate('Device');
+              }}>
+                  <View style={styles.hubCardContent}>
+                    <View style={styles.hubCardLeft}>
+                      <View style={[styles.hubIconContainer, {backgroundColor: status === 'online' ? '#E7F5F4' : '#FEF0EB'}]}>
+                        <Wifi size={22} color={statusColor} />
+                      </View>
+                      <View>
+                        <Text style={styles.hubName}>{hub.name}</Text>
+                        <View style={styles.hubStatusRow}>
+                          <View style={[styles.hubStatusDot, {backgroundColor: statusColor}]} />
+                          <Text style={[styles.hubStatusText, {color: statusColor}]}>{statusText}</Text>
+                        </View>
+                        <Text style={styles.hubHintText}>눌러서 기기 관리</Text>
+                      </View>
+                    </View>
+                    <View style={styles.hubCardRight}>
+                      <View style={styles.hubInfoItem}>
+                        <Power size={18} color={statusColor} />
+                        <Text style={[styles.hubInfoText, {color: statusColor}]}>
+                          {status === 'online' ? 'ON' : 'OFF'}
+                        </Text>
+                      </View>
+                      <ChevronRight size={20} color="#888888" />
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              );
+            })
+          )}
         </View>
 
         {/* Pet Status Summary */}

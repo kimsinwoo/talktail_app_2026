@@ -17,11 +17,17 @@ import {userStore} from '../store/userStore';
 interface BLEConnectionScreenProps {
   petName?: string;
   furColor?: string;
+  /**
+   * DeviceManagementScreen 등에서 상단 SafeArea/헤더를 이미 제공하는 경우 true로 사용합니다.
+   * 기본값(false)은 기존 화면 구조(SafeAreaView + ScrollView)를 그대로 유지합니다.
+   */
+  embedded?: boolean;
 }
 
 export function BLEConnectionScreen({
   petName = '우리 아이',
   furColor = 'brown',
+  embedded = false,
 }: BLEConnectionScreenProps) {
   const bleContext = useBLE();
   const {state, dispatch} = bleContext || {state: {isConnected: false, deviceId: null}, dispatch: () => {}};
@@ -182,80 +188,71 @@ export function BLEConnectionScreen({
     }
   };
 
+  const content = (
+    <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>블루투스 디바이스 연결</Text>
+        <Text style={styles.headerSubtitle}>
+          {petName}의 모니터링 디바이스를 연결하세요
+        </Text>
+      </View>
+
+      <View style={styles.statusCard}>
+        <View style={styles.statusRow}>
+          <Bluetooth size={24} color={state.isConnected ? '#2E8B7E' : '#9CA3AF'} />
+          <Text style={styles.statusText}>{state.isConnected ? '연결됨' : '연결 안됨'}</Text>
+        </View>
+        {state.deviceId && <Text style={styles.deviceId}>디바이스 ID: {state.deviceId}</Text>}
+      </View>
+
+      <TouchableOpacity
+        style={[styles.scanButton, isScanning && styles.scanButtonActive]}
+        onPress={handleScan}
+        disabled={isScanning || state.isConnected}>
+        <Text style={styles.scanButtonText}>{isScanning ? '스캔 중...' : '디바이스 찾기'}</Text>
+      </TouchableOpacity>
+
+      {isScanning && devices.length === 0 && (
+        <View style={styles.scanningIndicator}>
+          <Text style={styles.scanningText}>디바이스를 검색 중...</Text>
+        </View>
+      )}
+
+      {devices.length > 0 && (
+        <View style={styles.devicesList}>
+          <Text style={styles.devicesListTitle}>발견된 디바이스 ({devices.length})</Text>
+          {devices.map(device => (
+            <TouchableOpacity
+              key={device.id}
+              style={styles.deviceItem}
+              onPress={() => handleConnect(device.id)}
+              disabled={state.isConnected}>
+              <Wifi size={20} color="#f0663f" />
+              <View style={styles.deviceInfo}>
+                <Text style={styles.deviceName}>{device.name || 'Unknown Device'}</Text>
+                <Text style={styles.deviceIdText}>{device.id}</Text>
+              </View>
+              {state.deviceId === device.id && <Text style={styles.connectedLabel}>연결됨</Text>}
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
+
+      {state.isConnected && (
+        <TouchableOpacity style={styles.disconnectButton} onPress={handleDisconnect}>
+          <Text style={styles.disconnectButtonText}>연결 끊기</Text>
+        </TouchableOpacity>
+      )}
+    </ScrollView>
+  );
+
+  if (embedded) {
+    return <View style={styles.container}>{content}</View>;
+  }
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>블루투스 디바이스 연결</Text>
-          <Text style={styles.headerSubtitle}>
-            {petName}의 모니터링 디바이스를 연결하세요
-          </Text>
-        </View>
-
-        <View style={styles.statusCard}>
-          <View style={styles.statusRow}>
-            <Bluetooth
-              size={24}
-              color={state.isConnected ? '#2E8B7E' : '#9CA3AF'}
-            />
-            <Text style={styles.statusText}>
-              {state.isConnected ? '연결됨' : '연결 안됨'}
-            </Text>
-          </View>
-          {state.deviceId && (
-            <Text style={styles.deviceId}>디바이스 ID: {state.deviceId}</Text>
-          )}
-        </View>
-
-        <TouchableOpacity
-          style={[styles.scanButton, isScanning && styles.scanButtonActive]}
-          onPress={handleScan}
-          disabled={isScanning || state.isConnected}>
-          <Text style={styles.scanButtonText}>
-            {isScanning ? '스캔 중...' : '디바이스 찾기'}
-          </Text>
-        </TouchableOpacity>
-
-        {isScanning && devices.length === 0 && (
-          <View style={styles.scanningIndicator}>
-            <Text style={styles.scanningText}>디바이스를 검색 중...</Text>
-          </View>
-        )}
-
-        {devices.length > 0 && (
-          <View style={styles.devicesList}>
-            <Text style={styles.devicesListTitle}>
-              발견된 디바이스 ({devices.length})
-            </Text>
-            {devices.map((device) => (
-              <TouchableOpacity
-                key={device.id}
-                style={styles.deviceItem}
-                onPress={() => handleConnect(device.id)}
-                disabled={state.isConnected}>
-                <Wifi size={20} color="#f0663f" />
-                <View style={styles.deviceInfo}>
-                  <Text style={styles.deviceName}>
-                    {device.name || 'Unknown Device'}
-                  </Text>
-                  <Text style={styles.deviceIdText}>{device.id}</Text>
-                </View>
-                {state.deviceId === device.id && (
-                  <Text style={styles.connectedLabel}>연결됨</Text>
-                )}
-              </TouchableOpacity>
-            ))}
-          </View>
-        )}
-
-        {state.isConnected && (
-          <TouchableOpacity
-            style={styles.disconnectButton}
-            onPress={handleDisconnect}>
-            <Text style={styles.disconnectButtonText}>연결 끊기</Text>
-          </TouchableOpacity>
-        )}
-      </ScrollView>
+      {content}
     </SafeAreaView>
   );
 }

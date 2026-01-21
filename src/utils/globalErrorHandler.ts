@@ -33,6 +33,15 @@ export function setupGlobalErrorHandler() {
     };
 
     console.error('🚨 GLOBAL ERROR HANDLER', crashLog);
+    // 에러 객체 자체도 함께 덤프 (hostFunction/UnexceptedNativeCall 등에서 message가 잘리는 케이스 대비)
+    try {
+      console.error('🚨 GLOBAL ERROR RAW', {
+        message: (error as any)?.message,
+        name: (error as any)?.name,
+        stack: (error as any)?.stack,
+        error,
+      });
+    } catch {}
 
     // 크래시 로그 저장
     saveCrashLog(crashLog).catch(err => {

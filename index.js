@@ -6,6 +6,17 @@ import {AppRegistry} from 'react-native';
 import App from './App';
 import {name as appName} from './app.json';
 import {setupGlobalErrorHandler} from './src/utils/globalErrorHandler';
+import {Buffer} from 'buffer';
+
+// ✅ mqtt.js / 기타 Node 호환 라이브러리용 최소 폴리필
+// - RN은 Buffer/process가 전역에 없을 수 있어 mqtt(WebSocket) 수신이 실패할 수 있음
+const g = globalThis;
+if (!('Buffer' in g)) {
+  // @ts-expect-error - 런타임 폴리필
+  g.Buffer = Buffer;
+}
+// @ts-expect-error - 런타임 폴리필
+g.process = g.process || {env: {}};
 
 // 전역 에러 핸들러 설정 (가장 먼저 실행)
 setupGlobalErrorHandler();
