@@ -44,6 +44,9 @@ import CheckoutScreen from './src/screens/CheckoutScreen';
 import OrderCompleteScreen from './src/screens/OrderCompleteScreen';
 import {HubConsoleScreen} from './src/screens/HubConsoleScreen';
 import {DeviceRegisterScreen} from './src/screens/DeviceRegisterScreen';
+import {DiaryScreen} from './src/screens/DiaryScreen';
+import {DiaryWriteScreen} from './src/screens/DiaryWriteScreen';
+import {DiaryDetailScreen} from './src/screens/DiaryDetailScreen';
 import {hasToken, saveConnectedDeviceId} from './src/utils/storage';
 import {apiService} from './src/services/ApiService';
 
@@ -88,6 +91,9 @@ export type RootStackParamList = {
   PetEdit: {pet: any} | undefined;
   HubConsole: {hubId?: string} | undefined;
   DeviceRegister: {hubAddress: string} | undefined;
+  Diary: {petCode?: string; petName?: string} | undefined;
+  DiaryWrite: {petCode?: string; petName?: string} | undefined;
+  DiaryDetail: {diary: any} | undefined;
 };
 
 const Tab = createBottomTabNavigator<TabParamList>();
@@ -541,6 +547,9 @@ function App(): React.JSX.Element {
                     <Stack.Screen name="PetEdit" component={PetEditScreen} />
                     <Stack.Screen name="HubConsole" component={HubConsoleScreen} />
                     <Stack.Screen name="DeviceRegister" component={DeviceRegisterScreen} />
+                    <Stack.Screen name="Diary" component={DiaryScreen} />
+                    <Stack.Screen name="DiaryWrite" component={DiaryWriteScreen} />
+                    <Stack.Screen name="DiaryDetail" component={DiaryDetailScreen} />
                   </Stack.Navigator>
                 </NavigationContainer>
         <Toast />

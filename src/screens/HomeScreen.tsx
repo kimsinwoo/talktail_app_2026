@@ -30,6 +30,8 @@ import {
   Clock,
   Thermometer,
   Heart,
+  BookOpen,
+  PenLine,
 } from 'lucide-react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
@@ -271,11 +273,11 @@ export function HomeScreen({
     totalPoints: 5420,
   };
 
-  // 더미데이터: 3마리 반려동물별 웨어러블 및 피부 진단 데이터
+  // 더미데이터: 3마리 반려동물별 웨어러블, 피부 진단, 다이어리 데이터
   const petDependentData = useMemo(() => {
     // 실제로는 API에서 가져오지만, 지금은 더미데이터
-    const mockData: Record<string, {wearable: any; skin: any}> = {};
-    
+    const mockData: Record<string, {wearable: any; skin: any; diary: any}> = {};
+
     // displayPets 배열을 기반으로 더미데이터 생성
     displayPets.forEach((pet, index) => {
       const wearTimes = ['6시간 30분', '4시간 15분', '8시간 20분'];
@@ -290,6 +292,11 @@ export function HomeScreen({
       const daysSinceList = [6, 8, 4];
       const statuses = ['양호', '주의', '양호'];
 
+      // 다이어리 더미 데이터
+      const diaryTotalCounts = [12, 8, 15];
+      const diaryLastDates = ['2026.01.22', '2026.01.20', '2026.01.21'];
+      const diaryLastTitles = ['오늘도 산책 완료!', '비 오는 날', '새 간식 시식'];
+
       mockData[pet.pet_code] = {
         wearable: {
           todayWearTime: wearTimes[index % 3] || wearTimes[0],
@@ -303,6 +310,11 @@ export function HomeScreen({
           lastDiagnosisDate: diagnosisDates[index % 3] || diagnosisDates[0],
           daysSince: daysSinceList[index % 3] || daysSinceList[0],
           status: statuses[index % 3] || statuses[0],
+        },
+        diary: {
+          totalCount: diaryTotalCounts[index % 3] || diaryTotalCounts[0],
+          lastDate: diaryLastDates[index % 3] || diaryLastDates[0],
+          lastTitle: diaryLastTitles[index % 3] || diaryLastTitles[0],
         },
       };
     });
@@ -565,6 +577,11 @@ export function HomeScreen({
                 daysSince: 0,
                 status: '--',
               };
+              const diary = petData?.diary || {
+                totalCount: 0,
+                lastDate: '--',
+                lastTitle: '아직 작성된 일기가 없어요',
+              };
 
               return (
                 <View style={styles.petDependentContainer}>
@@ -603,6 +620,28 @@ export function HomeScreen({
                         <Text style={styles.serviceCardSubtitle}>{wearable.activitySummary}</Text>
                         <Text style={styles.serviceCardPoints}>
                           오늘 적립한 포인트 : {wearable.todayPoints || 0}p
+                        </Text>
+                      </View>
+                      <ChevronRight size={20} color="#CCCCCC" />
+                    </View>
+                  </TouchableOpacity>
+
+                  {/* 다이어리 쓰기 카드 */}
+                  <TouchableOpacity
+                    style={styles.serviceCard}
+                    activeOpacity={0.85}
+                    onPress={() => navigateTo('Diary', {petCode: pet.pet_code, petName: pet.name})}>
+                    <View style={styles.serviceCardHeader}>
+                      <View style={[styles.serviceIcon, {backgroundColor: '#EDE7F6'}]}>
+                        <BookOpen size={20} color="#7C4DFF" />
+                      </View>
+                      <View style={styles.serviceCardHeaderText}>
+                        <Text style={styles.serviceCardTitle}>다이어리</Text>
+                        <Text style={styles.serviceCardSubtitle} numberOfLines={1}>
+                          {diary.lastTitle}
+                        </Text>
+                        <Text style={styles.serviceCardDiaryStats}>
+                          총 {diary.totalCount}개의 일기
                         </Text>
                       </View>
                       <ChevronRight size={20} color="#CCCCCC" />
@@ -1108,6 +1147,12 @@ const styles = StyleSheet.create({
   serviceCardPoints: {
     fontSize: 13,
     color: '#FFB02E',
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  serviceCardDiaryStats: {
+    fontSize: 13,
+    color: '#7C4DFF',
     fontWeight: '600',
     marginTop: 2,
   },
