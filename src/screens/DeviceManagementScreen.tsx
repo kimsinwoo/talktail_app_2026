@@ -104,6 +104,7 @@ export function DeviceManagementScreen() {
   const [ssidList, setSsidList] = useState<string[]>([]);
   const [ssid, setSsid] = useState('');
   const [password, setPassword] = useState('');
+  const [hubName, setHubName] = useState<string>(''); // ✅ 허브 이름
   const [debugText, setDebugText] = useState<string>('');
   const [isProvisionDone, setIsProvisionDone] = useState(false);
   const [provisionStartedAt, setProvisionStartedAt] = useState<number | null>(null);
@@ -168,6 +169,7 @@ export function DeviceManagementScreen() {
     setSsidList([]);
     setSsid('');
     setPassword('');
+    setHubName(''); // ✅ 허브 이름 초기화
     setDebugText('');
     setIsProvisionDone(false);
     setProvisionStartedAt(null);
@@ -475,8 +477,11 @@ export function DeviceManagementScreen() {
       if (!hubAddress) return;
       // ✅ 전역 스토어에서 최신 연결된 디바이스 목록 가져오기
       const latestDevices = hubStatusStore.getState().getConnectedDevices(hubAddress);
-      setConnectedDevicesByHub(prev => ({...prev, [hubAddress]: latestDevices}));
-      ensureDraftsForHubMacs(hubAddress, latestDevices);
+      // ✅ 등록된 디바이스만 필터링
+      const registeredDevices = (hubDevicesByHub[hubAddress] || []).map(d => d.address);
+      const filteredDevices = latestDevices.filter(mac => registeredDevices.includes(mac));
+      setConnectedDevicesByHub(prev => ({...prev, [hubAddress]: filteredDevices}));
+      ensureDraftsForHubMacs(hubAddress, filteredDevices);
       refreshHubDevices(hubAddress).catch(() => {});
       setIsSearchingByHub(prev => ({...prev, [hubAddress]: false}));
     });
@@ -484,7 +489,7 @@ export function DeviceManagementScreen() {
       off();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [hubDevicesByHub]);
 
   // ✅ HubSocketService의 HUB_STATUS 이벤트는 전역 스토어에서 처리 (제거됨)
 
@@ -577,8 +582,7 @@ export function DeviceManagementScreen() {
             const macLike = /^[0-9a-f]{2}(:[0-9a-f]{2}){5}$/i.test(candidate.id);
             if (macLike) {
               const hubId = candidate.id.toLowerCase();
-              hubSocketService.subscribeHubMqtt(hubId);
-              registerHubToBackend(hubId)
+              registerHubToBackend(hubId, hubName)
                 .then(async () => {
                   // ✅ 허브 등록 직후 즉시 목록 새로고침 (캐시 무시)
                   await refreshHubs(true).catch(() => {});
@@ -681,11 +685,13 @@ export function DeviceManagementScreen() {
     }
   };
 
-  const registerHubToBackend = async (hubId: string) => {
+  const registerHubToBackend = async (hubId: string, name?: string) => {
     try {
+      // ✅ 이름이 지정되지 않았으면 기본값 사용
+      const hubNameToUse = (name || hubName || 'Tailing Hub').trim() || 'Tailing Hub';
       const res = await apiService.postRaw<{success: boolean; message?: string; data?: any}>('/hub', {
         mac_address: hubId,
-        name: 'Tailing Hub',
+        name: hubNameToUse,
       });
       if ((res as any)?.success) {
         return true;
@@ -768,7 +774,7 @@ export function DeviceManagementScreen() {
         }
         setDebugText(`MQTT_READY 수신: ${hubId}`);
         try {
-          await registerHubToBackend(hubId);
+          await registerHubToBackend(hubId, hubName);
           Toast.show({type: 'success', text1: '허브 연결이 완료 되었습니다', text2: hubId, position: 'bottom'});
           // ✅ 허브 등록 직후 즉시 목록 새로고침 (캐시 무시)
           await refreshHubs(true);
@@ -915,9 +921,23 @@ export function DeviceManagementScreen() {
                 <View style={styles.hubDevicesBox}>
                   <View style={styles.rowBetween}>
                     <Text style={styles.deviceSectionTitle}>디바이스</Text>
-                    <Text style={styles.deviceSectionCount}>
-                      {(hubDevicesByHub[h.address] || []).length}개
-                </Text>
+                    <View style={{flexDirection: 'row', alignItems: 'center', gap: 8}}>
+                      <Text style={styles.deviceSectionCount}>
+                        {(hubDevicesByHub[h.address] || []).length}개
+                      </Text>
+                      <TouchableOpacity
+                        onPress={() => requestConnectedDevices(h.address)}
+                        disabled={isSearchingByHub[h.address]}
+                        style={[
+                          styles.smallGhostButton,
+                          {backgroundColor: isSearchingByHub[h.address] ? '#E5E7EB' : '#E7F5F4'},
+                        ]}
+                        activeOpacity={0.85}>
+                        <Text style={[styles.smallGhostButtonText, {color: isSearchingByHub[h.address] ? '#9CA3AF' : '#2E8B7E'}]}>
+                          {isSearchingByHub[h.address] ? '검색 중...' : '전체 연결'}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
 
                   {(() => {
@@ -1093,6 +1113,21 @@ export function DeviceManagementScreen() {
                   <Text style={styles.label}>연결된 허브</Text>
                   <Text style={styles.mono}>{selectedHub?.id || '-'}</Text>
           </View>
+
+                <View style={{marginTop: 12}}>
+                  <Text style={styles.label}>허브 이름</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={hubName}
+                    onChangeText={setHubName}
+                    placeholder="허브 이름을 입력하세요 (예: 거실 허브)"
+                    placeholderTextColor="#999999"
+                    maxLength={50}
+                  />
+                  <Text style={[styles.cardSubtle, {marginTop: 4}]}>
+                    이름을 지정하지 않으면 "Tailing Hub"로 등록됩니다.
+                  </Text>
+                </View>
 
                 <View style={{marginTop: 12}}>
                   <View style={styles.rowBetween}>

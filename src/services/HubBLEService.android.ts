@@ -12,12 +12,25 @@ const DEFAULT_HUB_CHAR_TX = '6e400002-b5a3-f393-e0a9-e50e24dcca9e'; // Write
 export type HubBleCandidate = {id: string; name: string; rssi?: number};
 
 function isHubAdvertisedName(name: string) {
+  if (!name || name.trim() === '') return false;
+  
   // 구분자(언더스코어/하이픈/공백 등) 무시하고 비교
   const key = name.toLowerCase().replace(/[^a-z0-9]/g, '');
+  
   // ✅ 허브 광고명 후보
-  // - ESP32_S3 / ESP32-S3 / ESP32 S3
-  // - Tailing_HUB / Tailing-HUB / Tailing HUB
-  return key.includes('esp32s3') || key.includes('tailinghub');
+  // - ESP32_S3 / ESP32-S3 / ESP32 S3 / ESP32S3
+  // - Tailing_HUB / Tailing-HUB / Tailing HUB / TailingHUB
+  const isEsp32 = key.includes('esp32s3') || key.includes('esp32') || key.includes('s3');
+  const isTailingHub = key.includes('tailinghub') || key.includes('tailing');
+  
+  const result = isEsp32 || isTailingHub;
+  
+  // 디버깅: 필터링 결과 로그
+  if (__DEV__ && !result) {
+    console.log('[HubBLEService] ⏭️ Filtered out (not hub)', {originalName: name, normalizedKey: key});
+  }
+  
+  return result;
 }
 
 class HubBLEService {
@@ -77,39 +90,39 @@ class HubBLEService {
       const bytes = Array.from(Buffer.from(raw, 'utf8'));
       
       try {
-        // Android: Write 시도 후 실패 시 Write Without Response로 폴백
-        try {
-          await BleManager.write(peripheralId, serviceUuid, txUuid, bytes);
-          console.log('[HubBLEService] 📤 write packet (Android, withResponse)', {
-            peripheralId,
-            serviceUuid,
-            txUuid,
-            method: 'write',
-            index: i,
-            total: packets.length,
-            byteLen: bytes.length,
-            raw,
-          });
-        } catch (e1) {
-          this.logError('write packet failed, retrying withoutResponse', e1, {
-            peripheralId,
-            serviceUuid,
-            txUuid,
-            index: i,
-            total: packets.length,
-            byteLen: bytes.length,
-          });
-          await (BleManager as any).writeWithoutResponse(peripheralId, serviceUuid, txUuid, bytes);
-          console.log('[HubBLEService] 📤 write packet (Android, withoutResponse)', {
-            peripheralId,
-            serviceUuid,
-            txUuid,
-            method: 'writeWithoutResponse',
-            index: i,
-            total: packets.length,
-            byteLen: bytes.length,
-            raw,
-          });
+          // Android: Write 시도 후 실패 시 Write Without Response로 폴백
+          try {
+            await BleManager.write(peripheralId, serviceUuid, txUuid, bytes);
+            console.log('[HubBLEService] 📤 write packet (Android, withResponse)', {
+              peripheralId,
+              serviceUuid,
+              txUuid,
+              method: 'write',
+              index: i,
+              total: packets.length,
+              byteLen: bytes.length,
+              raw,
+            });
+          } catch (e1) {
+            this.logError('write packet failed, retrying withoutResponse', e1, {
+              peripheralId,
+              serviceUuid,
+              txUuid,
+              index: i,
+              total: packets.length,
+              byteLen: bytes.length,
+            });
+            await (BleManager as any).writeWithoutResponse(peripheralId, serviceUuid, txUuid, bytes);
+            console.log('[HubBLEService] 📤 write packet (Android, withoutResponse)', {
+              peripheralId,
+              serviceUuid,
+              txUuid,
+              method: 'writeWithoutResponse',
+              index: i,
+              total: packets.length,
+              byteLen: bytes.length,
+              raw,
+            });
         }
         
         // Android: Write 후 대기
@@ -404,13 +417,44 @@ class HubBLEService {
 
     const subDiscover = BleManager.onDiscoverPeripheral((p: any) => {
       const id = String(p?.id || '');
+      // ✅ Android: name이 없을 수 있으므로 localName, advertising.localName도 확인
       const name = String(p?.name || p?.localName || p?.advertising?.localName || '');
       const rssi = typeof p?.rssi === 'number' ? p.rssi : undefined;
+      
+      // 디버깅: 모든 발견된 디바이스 로그 (ESP32_S3 찾기용)
+      if (__DEV__) {
+        console.log('[HubBLEService] 🔍 Discovered peripheral', {
+          id,
+          name,
+          localName: p?.localName,
+          advertisingLocalName: p?.advertising?.localName,
+          rssi,
+          raw: p,
+        });
+      }
+      
       if (!id) return;
-      if (!name) return;
-      if (!isHubAdvertisedName(name)) return;
+      
+      // ✅ 이름이 없어도 ID로 필터링 시도 (일부 디바이스는 이름이 나중에 올 수 있음)
+      if (!name || name === '') {
+        // 이름이 없으면 일단 로그만 남기고 스킵 (나중에 이름이 올 수 있음)
+        if (__DEV__) {
+          console.log('[HubBLEService] ⚠️ Peripheral without name', {id, rssi});
+        }
+        return;
+      }
+      
+      if (!isHubAdvertisedName(name)) {
+        // ESP32_S3가 아닌 디바이스는 로그만 남기고 스킵
+        if (__DEV__) {
+          console.log('[HubBLEService] ⏭️ Not a hub device', {id, name});
+        }
+        return;
+      }
+      
       if (seen.has(id)) return;
       seen.add(id);
+      
       // #region agent log
       fetch('http://127.0.0.1:7244/ingest/3eff9cd6-dca3-41a1-a9e7-4063579704a1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'HubBLEService.ts:423',message:'hub discovered',data:{id,name,rssi,platform:Platform.OS},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H7'})}).catch(()=>{});
       // #endregion
@@ -427,17 +471,17 @@ class HubBLEService {
     const scanOptionsA = {serviceUUIDs: [], seconds: durationSeconds, allowDuplicates: false};
     const scanOptionsB = {services: [], seconds: durationSeconds, allowDuplicates: false};
 
-    try {
-      await (BleManager as any).scan(scanOptionsA);
-      return;
-    } catch (e1) {
-      this.logError('BleManager.scan failed (android optionsA)', e1, scanOptionsA);
-    }
-    try {
-      await (BleManager as any).scan(scanOptionsB);
-      return;
-    } catch (e2) {
-      this.logError('BleManager.scan failed (android optionsB)', e2, scanOptionsB);
+      try {
+        await (BleManager as any).scan(scanOptionsA);
+        return;
+      } catch (e1) {
+        this.logError('BleManager.scan failed (android optionsA)', e1, scanOptionsA);
+      }
+      try {
+        await (BleManager as any).scan(scanOptionsB);
+        return;
+      } catch (e2) {
+        this.logError('BleManager.scan failed (android optionsB)', e2, scanOptionsB);
       // 폴백: 기존 시그니처 시도
       try {
         // @ts-ignore
@@ -463,7 +507,7 @@ class HubBLEService {
     console.log('[HubBLEService] ✅ ensureReady done', {peripheralId});
 
     // Android: scan 중지
-    await this.stopScan();
+      await this.stopScan();
     console.log('[HubBLEService] ✅ stopScan done', {peripheralId});
 
     // Android: connect 로직
@@ -513,18 +557,18 @@ class HubBLEService {
         } catch (e2) {
           this.logError('BleManager.connect failed (without options)', e2, {peripheralId});
           throw e2;
-        }
       }
+    }
     }
 
     // ESP32-S3: connect → services/notify 레이스 완화
     await new Promise<void>(resolve => setTimeout(resolve, 1000));
 
     // Android: MTU 요청
-    try {
-      await (BleManager as any).requestMTU(peripheralId, 185);
-    } catch (e) {
-      this.logError('requestMTU failed (ignored)', e, {peripheralId});
+      try {
+        await (BleManager as any).requestMTU(peripheralId, 185);
+      } catch (e) {
+        this.logError('requestMTU failed (ignored)', e, {peripheralId});
     }
 
     try {
@@ -597,14 +641,14 @@ class HubBLEService {
 
     try {
       console.log('[HubBLEService] 📡 startNotification (Android)', {
-        peripheralId,
-        serviceUuid: this.resolvedServiceUuid,
-        rxUuid: this.resolvedRxUuid,
-      });
+          peripheralId,
+          serviceUuid: this.resolvedServiceUuid,
+          rxUuid: this.resolvedRxUuid,
+        });
 
       await BleManager.startNotification(peripheralId, this.resolvedServiceUuid, this.resolvedRxUuid);
       console.log('[HubBLEService] ✅ startNotification success (Android)', {
-        peripheralId,
+            peripheralId,
         serviceUuid: this.resolvedServiceUuid,
         rxUuid: this.resolvedRxUuid,
       });

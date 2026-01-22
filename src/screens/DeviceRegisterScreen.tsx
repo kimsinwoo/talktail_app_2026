@@ -199,7 +199,7 @@ export function DeviceRegisterScreen() {
       // ✅ 네트워크 에러나 타임아웃인 경우 재시도
       if ((status >= 500 || !status) && retryCount < maxRetries) {
         // ✅ 500ms 대기 후 재시도
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise<void>(resolve => setTimeout(resolve, 500));
         return createOrUpdateDeviceInDb(mac, name, retryCount + 1);
       }
       
@@ -242,8 +242,10 @@ export function DeviceRegisterScreen() {
         // ✅ 등록 완료 후 즉시 목록 새로고침
         await refreshHubDevices();
         setSelectedMacs({});
-        // ✅ 등록 완료 후 이전 화면으로 돌아가기 (약간의 지연을 두어 사용자가 성공 메시지를 볼 수 있도록)
+        // ✅ 등록 완료 후 이전 화면으로 돌아가기 전에 다시 한 번 목록 새로고침
         setTimeout(() => {
+          // ✅ 등록 완료 후 이전 화면으로 돌아가기
+          // 부모 화면(MyPageScreen)의 useFocusEffect가 목록을 자동으로 새로고침함
           navigation.goBack();
         }, 800);
       } else if (failedOnes.length > 0) {

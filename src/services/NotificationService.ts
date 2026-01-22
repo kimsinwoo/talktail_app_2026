@@ -86,9 +86,11 @@ class NotificationService {
   async showNotification(
     notification: NotificationData,
     channelId: string = 'general',
+    force: boolean = false,
   ) {
-    // 앱이 foreground에 있을 때는 notification을 띄우지 않음
-    if (AppState.currentState === 'active') {
+    // force가 false이고 앱이 foreground에 있을 때는 notification을 띄우지 않음
+    // (호출하는 쪽에서 이미 foreground/background를 구분했을 경우 force=true로 호출)
+    if (!force && AppState.currentState === 'active') {
       return;
     }
 
@@ -111,8 +113,14 @@ class NotificationService {
           badge: true,
         },
       });
+      console.log('[NotificationService] ✅ Notification displayed', {
+        title: notification.title,
+        body: notification.body,
+        channelId,
+        appState: AppState.currentState,
+      });
     } catch (error) {
-      console.error('알림 표시 실패:', error);
+      console.error('[NotificationService] ❌ 알림 표시 실패:', error);
     }
   }
 
@@ -144,6 +152,35 @@ class NotificationService {
     const now = Date.now();
     const isAppActive = AppState.currentState === 'active';
 
+    // ✅ 심박수 7일 때: 배터리 부족
+    if (heartRate === 7) {
+      if (now - this.lastHeartRateNotification > this.NOTIFICATION_COOLDOWN) {
+        if (isAppActive) {
+          // 포그라운드: 토스트 표시
+          Toast.show({
+            type: 'info',
+            text1: '🔋 배터리 부족',
+            text2: '배터리가 부족합니다',
+            position: 'top',
+            visibilityTime: 3000,
+          });
+        } else {
+          // 백그라운드: Notification 표시
+          this.showNotification(
+            {
+              title: '🔋 배터리 부족',
+              body: '배터리가 부족합니다',
+              data: {type: 'battery_low', value: heartRate},
+            },
+            'health-alerts',
+            true, // ✅ force=true: background에서 확실히 알림 표시
+          );
+        }
+        this.lastHeartRateNotification = now;
+      }
+      return; // 7일 때는 다른 알림 체크하지 않음
+    }
+
     // 심박수 8일 때: 이상 신호 감지
     if (heartRate === 8) {
       if (now - this.lastHeartRateNotification > this.NOTIFICATION_COOLDOWN) {
@@ -165,6 +202,7 @@ class NotificationService {
               data: {type: 'heart_rate_abnormal', value: heartRate},
             },
             'health-alerts',
+            true, // ✅ force=true: background에서 확실히 알림 표시
           );
         }
         this.lastHeartRateNotification = now;
@@ -193,6 +231,7 @@ class NotificationService {
               data: {type: 'heart_rate_active', value: heartRate},
             },
             'health-alerts',
+            true, // ✅ force=true: background에서 확실히 알림 표시
           );
         }
         this.lastHeartRateNotification = now;

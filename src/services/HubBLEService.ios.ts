@@ -11,8 +11,24 @@ const DEFAULT_HUB_CHAR_TX = '6E400002-B5A3-F393-E0A9-E50E24DCCA9E'; // Write
 export type HubBleCandidate = {id: string; name: string; rssi?: number};
 
 function isHubAdvertisedName(name: string) {
+  if (!name || name.trim() === '') return false;
+  
   const key = name.toLowerCase().replace(/[^a-z0-9]/g, '');
-  return key.includes('esp32s3') || key.includes('tailinghub');
+  
+  // ✅ 허브 광고명 후보
+  // - ESP32_S3 / ESP32-S3 / ESP32 S3 / ESP32S3
+  // - Tailing_HUB / Tailing-HUB / Tailing HUB / TailingHUB
+  const isEsp32 = key.includes('esp32s3') || key.includes('esp32') || key.includes('s3');
+  const isTailingHub = key.includes('tailinghub') || key.includes('tailing');
+  
+  const result = isEsp32 || isTailingHub;
+  
+  // 디버깅: 필터링 결과 로그
+  if (__DEV__ && !result) {
+    console.log('[HubBLEService] ⏭️ Filtered out (not hub)', {originalName: name, normalizedKey: key});
+  }
+  
+  return result;
 }
 
 class HubBLEServiceIOS {
@@ -154,15 +170,69 @@ class HubBLEServiceIOS {
 
   async scanForHubs(durationSeconds = 6, onFound?: (c: HubBleCandidate) => void) {
     console.log('[HubBLEService] 🔍 scanForHubs start (iOS)', {durationSeconds});
-    await this.ensureReady();
+    
+    try {
+      await this.ensureReady();
+      console.log('[HubBLEService] ✅ ensureReady completed (iOS)');
+    } catch (e) {
+      console.error('[HubBLEService] ❌ ensureReady failed', e);
+      throw e;
+    }
 
     const manager = await this.getManager();
+    console.log('[HubBLEService] ✅ manager obtained (iOS)');
+    
     const seen = new Set<string>();
     this.scannedDevices.clear();
 
+    console.log('[HubBLEService] 🚀 startDeviceScan called (iOS)');
     manager.startDeviceScan(null, {allowDuplicates: false}, (err, device) => {
-      if (err || !device?.name) return;
-      if (!isHubAdvertisedName(device.name)) return;
+      if (err) {
+        console.error('[HubBLEService] ❌ scan error', err);
+        return;
+      }
+      
+      if (!device) return;
+      
+      // ✅ iOS: name이 없을 수 있으므로 localName도 확인 (Android와 동일한 로직)
+      const deviceName = device.name || device.localName || '';
+      
+      // 디버깅: 모든 발견된 디바이스 로그 (ESP32_S3 찾기용)
+      if (__DEV__) {
+        console.log('[HubBLEService] 🔍 Discovered device (iOS)', {
+          id: device.id,
+          name: device.name,
+          localName: device.localName,
+          resolvedName: deviceName,
+          rssi: device.rssi,
+          isConnectable: device.isConnectable,
+        });
+      }
+      
+      if (!deviceName || deviceName.trim() === '') {
+        // 이름이 없으면 로그만 남기고 스킵
+        if (__DEV__) {
+          console.log('[HubBLEService] ⚠️ Device without name', {
+            id: device.id,
+            name: device.name,
+            localName: device.localName,
+          });
+        }
+        return;
+      }
+      
+      if (!isHubAdvertisedName(deviceName)) {
+        // ESP32_S3가 아닌 디바이스는 로그만 남기고 스킵
+        if (__DEV__) {
+          console.log('[HubBLEService] ⏭️ Not a hub device', {
+            id: device.id,
+            name: device.name,
+            localName: device.localName,
+            resolvedName: deviceName,
+          });
+        }
+        return;
+      }
 
       const id = device.id;
       if (seen.has(id)) return;
@@ -173,10 +243,12 @@ class HubBLEServiceIOS {
 
       console.log('[HubBLEService] ✅ hub discovered', {
         id,
-        name: device.name,
+        name: deviceName,
+        originalName: device.name,
+        localName: device.localName,
         rssi: device.rssi,
       });
-      onFound?.({id, name: device.name, rssi: device.rssi ?? undefined});
+      onFound?.({id, name: deviceName, rssi: device.rssi ?? undefined});
     });
 
     // durationSeconds 후 스캔 중지

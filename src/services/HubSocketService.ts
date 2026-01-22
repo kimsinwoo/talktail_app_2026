@@ -1,11 +1,11 @@
 import {io, Socket} from 'socket.io-client';
 import {AppState, type AppStateStatus} from 'react-native';
-import {SOCKET_IO_URL, MQTT_BROKER_WS_URL} from '../constants/api';
+import {SOCKET_IO_URL} from '../constants/api';
 import {getTokenString} from '../utils/storage';
 import {notificationService} from './NotificationService';
 import {bleService} from './BLEService';
-import {hubMqttBridgeService} from './HubMqttBridgeService';
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Listener = (...args: any[]) => void;
 type HubStatus = 'unknown' | 'checking' | 'online' | 'offline';
 
@@ -29,7 +29,6 @@ class HubSocketService {
     {startAt: number; timeoutMs: number; promise: Promise<boolean>}
   >();
   private suppressStateHubUntil = new Map<string, number>(); // hubId -> ms (connect_devices 중 state:hub 억제)
-  private mqttBridgeReady = false;
 
   // ✅ connected_devices 캐시 (디바이스 상태 판정용)
   private connectedDevicesByHub = new Map<string, string[]>();
@@ -64,6 +63,7 @@ class HubSocketService {
   // 모든 데이터를 상세하게 로깅
   private debugLog(event: string, payload: unknown) {
     try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const p = payload as any;
       const hubId =
         typeof p?.hubId === 'string'
@@ -78,6 +78,7 @@ class HubSocketService {
       
       // ✅ 전체 payload를 JSON으로 변환하여 로깅
       let payloadJson: string | undefined;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let payloadData: any = payload;
       try {
         payloadJson = JSON.stringify(payload, null, 2);
@@ -104,6 +105,7 @@ class HubSocketService {
     }
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private emitToLocal(event: string, ...args: any[]) {
     const set = this.listeners.get(event);
     if (!set || set.size === 0) return;
@@ -155,41 +157,30 @@ class HubSocketService {
 
     this.socket = s;
 
-    // ✅ MQTT 브릿지(앱 직접 구독): Socket.IO에 TELEMETRY가 안 내려오는 환경에서도 앱에서 값 표시 가능
-    // - 백엔드를 수정하지 않고, broker(ws://...:9001)에 직접 연결
-    if (!this.mqttBridgeReady) {
-      this.mqttBridgeReady = true;
-      hubMqttBridgeService.connect(MQTT_BROKER_WS_URL).catch(() => {});
-      hubMqttBridgeService.on('CONNECTED_DEVICES', (p) => {
-        // Socket.IO 이벤트와 동일한 형태로 로컬에 주입
-        const hubId = p.hubAddress;
-        this.markHubActivity(hubId, 'CONNECTED_DEVICES');
-        this.applyConnectedDevices(hubId, p.connected_devices);
-        this.emitToLocal('CONNECTED_DEVICES', p);
-      });
-      hubMqttBridgeService.on('TELEMETRY', (p) => {
-        this.markHubActivity(p.hubId, 'TELEMETRY');
-        this.emitToLocal('TELEMETRY', p);
-      });
-      hubMqttBridgeService.on('MQTT_READY', (p) => {
-        // ✅ 백엔드 Socket.IO MQTT_READY가 안 내려와도, 앱 MQTT 브릿지가 직접 감지해 로컬에 전달
-        this.markHubActivity(p.hubId, 'MQTT_READY');
-        this.emitToLocal('MQTT_READY', p);
-      });
-      hubMqttBridgeService.on('ERROR', (e) => {
-        console.warn('[HubMqttBridge] error:', e.message);
-      });
-    }
-
     s.on('connect', () => {
       console.log('[HubSocketService] ✅ Socket.IO connected', {
         socketUrl,
         timestamp: new Date().toISOString(),
       });
+      // ✅ 모든 수신 데이터를 콘솔에 출력
+      console.log(`[HubSocketService] 📥 Socket.IO Event: "connect"`, {
+        event: 'connect',
+        timestamp: new Date().toISOString(),
+        socketUrl,
+        connected: true,
+      });
       this.debugLog('connect', {socketUrl: socketUrl, connected: true});
       this.emitToLocal('connect');
     });
     s.on('disconnect', (reason: any) => {
+      // ✅ 모든 수신 데이터를 콘솔에 출력
+      console.log(`[HubSocketService] 📥 Socket.IO Event: "disconnect"`, {
+        event: 'disconnect',
+        timestamp: new Date().toISOString(),
+        reason,
+        reasonType: typeof reason,
+        reasonString: JSON.stringify(reason, null, 2),
+      });
       // 소켓이 끊기면 허브는 즉시 offline로 간주
       for (const hubId of this.hubStatus.keys()) {
         this.forceHubOffline(hubId, {reason: 'socket_disconnect'});
@@ -198,30 +189,80 @@ class HubSocketService {
       this.emitToLocal('disconnect', reason);
     });
     s.on('connect_error', (err: any) => {
+      // ✅ 모든 수신 데이터를 콘솔에 출력
+      console.log(`[HubSocketService] 📥 Socket.IO Event: "connect_error"`, {
+        event: 'connect_error',
+        timestamp: new Date().toISOString(),
+        error: err,
+        errorType: typeof err,
+        errorString: JSON.stringify(err, null, 2),
+        errorMessage: err?.message,
+        errorStack: err?.stack,
+      });
       this.debugLog('connect_error', err);
       this.emitToLocal('connect_error', err);
     });
 
     // 서버가 주는 이벤트들
     s.on('connected', (payload: any) => {
+      // ✅ 모든 수신 데이터를 콘솔에 출력
+      console.log(`[HubSocketService] 📥 Socket.IO Event: "connected"`, {
+        event: 'connected',
+        timestamp: new Date().toISOString(),
+        payload,
+        payloadType: typeof payload,
+        payloadString: JSON.stringify(payload, null, 2),
+      });
       this.debugLog('connected', payload);
       this.emitToLocal('connected', payload);
     });
     s.on('CONTROL_ACK', (payload: any) => {
+      // ✅ 모든 수신 데이터를 콘솔에 출력
+      console.log(`[HubSocketService] 📥 Socket.IO Event: "CONTROL_ACK"`, {
+        event: 'CONTROL_ACK',
+        timestamp: new Date().toISOString(),
+        payload,
+        payloadType: typeof payload,
+        payloadString: JSON.stringify(payload, null, 2),
+      });
       this.debugLog('CONTROL_ACK', payload);
       this.emitToLocal('CONTROL_ACK', payload);
     });
     s.on('CONTROL_RESULT', (payload: any) => {
+      // ✅ 모든 수신 데이터를 콘솔에 출력
+      console.log(`[HubSocketService] 📥 Socket.IO Event: "CONTROL_RESULT"`, {
+        event: 'CONTROL_RESULT',
+        timestamp: new Date().toISOString(),
+        payload,
+        payloadType: typeof payload,
+        payloadString: JSON.stringify(payload, null, 2),
+      });
       this.debugLog('CONTROL_RESULT', payload);
       this.emitToLocal('CONTROL_RESULT', payload);
     });
     s.on('TELEMETRY', (payload: any) => {
+      // ✅ 모든 수신 데이터를 콘솔에 출력
+      console.log(`[HubSocketService] 📥 Socket.IO Event: "TELEMETRY"`, {
+        event: 'TELEMETRY',
+        timestamp: new Date().toISOString(),
+        payload,
+        payloadType: typeof payload,
+        payloadString: JSON.stringify(payload, null, 2),
+      });
       this.debugLog('TELEMETRY', payload);
       const hubId = typeof payload?.hubId === 'string' ? payload.hubId : null;
       if (hubId) this.markHubActivity(hubId, 'TELEMETRY');
       this.emitToLocal('TELEMETRY', payload);
     });
     s.on('CONNECTED_DEVICES', (payload: any) => {
+      // ✅ 모든 수신 데이터를 콘솔에 출력
+      console.log(`[HubSocketService] 📥 Socket.IO Event: "CONNECTED_DEVICES"`, {
+        event: 'CONNECTED_DEVICES',
+        timestamp: new Date().toISOString(),
+        payload,
+        payloadType: typeof payload,
+        payloadString: JSON.stringify(payload, null, 2),
+      });
       this.debugLog('CONNECTED_DEVICES', payload);
       const hubId =
         typeof payload?.hubAddress === 'string'
@@ -241,9 +282,35 @@ class HubSocketService {
       this.emitToLocal('CONNECTED_DEVICES', payload);
     });
     s.on('MQTT_READY', (payload: any) => {
+      // ✅ 모든 수신 데이터를 콘솔에 출력
+      console.log(`[HubSocketService] 📥 Socket.IO Event: "MQTT_READY"`, {
+        event: 'MQTT_READY',
+        timestamp: new Date().toISOString(),
+        payload,
+        payloadType: typeof payload,
+        payloadString: JSON.stringify(payload, null, 2),
+      });
       this.debugLog('MQTT_READY', payload);
       this.emitToLocal('MQTT_READY', payload);
     });
+    
+    // ✅ 알 수 없는 이벤트도 로깅하기 위해 모든 이벤트를 감지
+    if (typeof (s as any).onAny === 'function') {
+      (s as any).onAny((event: string, ...args: any[]) => {
+        // 이미 위에서 등록한 이벤트는 중복 로깅 방지
+        if (!['connect', 'disconnect', 'connect_error', 'connected', 'CONTROL_ACK', 'CONTROL_RESULT', 'TELEMETRY', 'CONNECTED_DEVICES', 'MQTT_READY'].includes(event)) {
+          console.log(`[HubSocketService] 📥 Socket.IO Unknown Event: "${event}"`, {
+            event,
+            timestamp: new Date().toISOString(),
+            payload: args.length > 0 ? args[0] : undefined,
+            payloadType: args.length > 0 ? typeof args[0] : 'undefined',
+            payloadString: args.length > 0 ? JSON.stringify(args[0], null, 2) : 'undefined',
+            argsCount: args.length,
+            allArgs: args,
+          });
+        }
+      });
+    }
   }
 
   private applyConnectedDevices(hubId: string, list: string[]) {
@@ -282,7 +349,15 @@ class HubSocketService {
   }
 
   emit(event: string, payload?: any) {
-    if (!this.socket) throw new Error('소켓이 연결되지 않았습니다.');
+    if (!this.socket) {
+      console.error('[HubSocketService] ❌ emit failed: socket not initialized', {event, payload});
+      throw new Error('소켓이 연결되지 않았습니다.');
+    }
+    if (!this.socket.connected) {
+      console.error('[HubSocketService] ❌ emit failed: socket not connected', {event, payload, connected: this.socket.connected});
+      throw new Error('소켓이 연결되지 않았습니다.');
+    }
+    console.log('[HubSocketService] 📤 emit', {event, payload, timestamp: new Date().toISOString()});
     this.socket.emit(event, payload);
   }
 
@@ -292,6 +367,18 @@ class HubSocketService {
     command: any;
     requestId?: string;
   }) {
+    if (!this.socket || !this.socket.connected) {
+      console.error('[HubSocketService] ❌ controlRequest failed: socket not connected', {
+        payload,
+        hasSocket: !!this.socket,
+        connected: this.socket?.connected,
+      });
+      throw new Error('소켓이 연결되지 않았습니다. 잠시 후 다시 시도해주세요.');
+    }
+    console.log('[HubSocketService] 📤 controlRequest', {
+      payload,
+      timestamp: new Date().toISOString(),
+    });
     this.emit('CONTROL_REQUEST', payload);
   }
 
@@ -523,19 +610,7 @@ class HubSocketService {
     // 즉시 한 번 수행
     this.probeHub(hubId, {timeoutMs, reason: 'poll_init', silentIfOffline: true}).catch(() => {});
 
-    // ✅ MQTT 브릿지로 hub/{hubId}/send 구독 (웹(front)과 동일)
-    hubMqttBridgeService.subscribeHub(hubId).catch(() => {});
-
     return () => this.stopHubPolling(hubId);
-  }
-
-  /**
-   * ✅ state:hub polling 없이 MQTT 브릿지만 구독 (허브 등록/프로비저닝 플로우 전용)
-   * - backend Socket.IO가 MQTT_READY를 내려주지 않는 환경에서도 앱이 broker를 직접 구독해 ready를 감지할 수 있음
-   */
-  subscribeHubMqtt(hubId: string) {
-    if (!hubId) return;
-    hubMqttBridgeService.subscribeHub(hubId).catch(() => {});
   }
 
   stopHubPolling(hubId: string) {

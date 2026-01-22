@@ -18,7 +18,6 @@ import {orgStore} from './src/store/orgStore';
 import {HomeScreen} from './src/screens/HomeScreen';
 import {MonitoringScreen} from './src/screens/MonitoringScreen';
 import {StoreScreen} from './src/screens/StoreScreen';
-import {DeviceManagementScreen} from './src/screens/DeviceManagementScreen';
 import {MyPageScreen} from './src/screens/MyPageScreen';
 import {LoginScreen} from './src/screens/LoginScreen';
 import SignupScreen from './src/screens/SignupScreen';

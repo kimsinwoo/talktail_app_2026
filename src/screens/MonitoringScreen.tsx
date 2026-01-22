@@ -33,6 +33,9 @@ import {backendNotificationService} from '../services/BackendNotificationService
 import {getToken} from '../utils/storage';
 import Toast from 'react-native-toast-message';
 import {Flame} from 'lucide-react-native';
+import {notificationService} from '../services/NotificationService';
+import {telemetryService} from '../services/TelemetryService';
+import {type NormalizedTelemetry, getDisplayHR, isSpecialHRValue, getHRSpecialMessage} from '../types/telemetry';
 
 interface MonitoringScreenProps {
   petId: string;
@@ -56,15 +59,19 @@ export function MonitoringScreen({
   const [hubs, setHubs] = useState<Array<{address: string; name: string}>>([]);
   const [selectedHub, setSelectedHub] = useState<string>('');
   const [selectedHubDevice, setSelectedHubDevice] = useState<string>('');
-  const [latestTelemetryByDevice, setLatestTelemetryByDevice] = useState<Record<string, any>>({});
+  const [latestTelemetryByDevice, setLatestTelemetryByDevice] = useState<Record<string, NormalizedTelemetry>>({});
   const [lastHubTelemetryAt, setLastHubTelemetryAt] = useState<number | null>(null);
+  const [registeredDevices, setRegisteredDevices] = useState<string[]>([]); // ✅ 등록된 디바이스 목록
+  const [isRequestingDevices, setIsRequestingDevices] = useState(false); // ✅ 전체 연결 요청 중
   
   // ✅ 전역 허브 상태 스토어 구독 (실시간 업데이트)
   const hubStatus = hubStatusStore(state => selectedHub ? state.hubStatus[selectedHub] : 'unknown');
   const connectedDevicesByHub = hubStatusStore(state => state.connectedDevicesByHub);
 
   const isBleMode = !!state.isConnected && typeof state.deviceId === 'string' && state.deviceId.length > 0;
-  const hubConnectedNow = selectedHub ? connectedDevicesByHub[selectedHub] || [] : [];
+  const hubConnectedNowRaw = selectedHub ? connectedDevicesByHub[selectedHub] || [] : [];
+  // ✅ 등록된 디바이스만 필터링
+  const hubConnectedNow = hubConnectedNowRaw.filter(mac => registeredDevices.includes(mac));
   // ✅ 허브 상태가 online으로 갱신되지 않는 케이스(서버 payload 키 불일치/CONNECTED_DEVICES 미수신 등)에서도
   // 텔레메트리를 수신했다면 화면은 표시되도록 한다.
   const isHubMode = !isBleMode && !!selectedHub;
@@ -77,8 +84,8 @@ export function MonitoringScreen({
     const offOffline = hubSocketService.on('HUB_OFFLINE', (p: any) => {
       const hubId = typeof p?.hubId === 'string' ? p.hubId : '';
       if (!hubId) return;
-      // 허브가 꺼졌다고 판단되면 BLE로 "저장된 디바이스" 1대만 연결 시도
-      bleService.fallbackConnectOnce(10).catch(() => {});
+      // ✅ BLE 자동 연결 기능 비활성화 (사용자 요청)
+      // bleService.fallbackConnectOnce(10).catch(() => {});
     });
     return () => {
       stop();
@@ -86,102 +93,109 @@ export function MonitoringScreen({
     };
   }, [selectedHub]);
 
-  type ParsedLine = {
-    deviceMac: string;
-    samplingRate: number;
-    hr: number;
-    spo2: number;
-    temp: number;
-    battery: number;
-  };
-
-  const parseTelemetryLine = (line: string): ParsedLine | null => {
-    // 형식: device_mac_address-sampling_rate, hr, spo2, temp, battery
-    // 예: "d4:d5:3f:28:e1:f4-54.12,8,0,34.06,8"
-    if (!line || typeof line !== 'string') {
-      console.warn('[MonitoringScreen] parseTelemetryLine: invalid input', line);
-      return null;
-    }
-
-    const trimmed = line.trim();
-    const parts = trimmed.split(',').map(p => p.trim()).filter(p => p.length > 0);
-    
-    if (parts.length < 5) {
-      console.warn('[MonitoringScreen] parseTelemetryLine: insufficient parts', {line: trimmed, partsCount: parts.length});
-      return null;
-    }
-
-    const head = parts[0];
-    const dashIdx = head.lastIndexOf('-');
-    
-    if (dashIdx <= 0) {
-      console.warn('[MonitoringScreen] parseTelemetryLine: no dash found', {line: trimmed, head});
-      return null;
-    }
-
-    const deviceMac = head.slice(0, dashIdx).trim();
-    const samplingRateStr = head.slice(dashIdx + 1).trim();
-    
-    if (!deviceMac || deviceMac.length === 0) {
-      console.warn('[MonitoringScreen] parseTelemetryLine: empty deviceMac', {line: trimmed, head});
-      return null;
-    }
-
-    const samplingRateRaw = Number(samplingRateStr);
-    const hrRaw = Number(parts[1]);
-    const spo2Raw = Number(parts[2]);
-    const tempRaw = Number(parts[3]);
-    const batteryRaw = Number(parts[4]);
-
-    const parsed = {
-      deviceMac,
-      samplingRate: Number.isFinite(samplingRateRaw) ? samplingRateRaw : 50,
-      hr: Number.isFinite(hrRaw) ? hrRaw : 0,
-      spo2: Number.isFinite(spo2Raw) ? spo2Raw : 0,
-      temp: Number.isFinite(tempRaw) ? tempRaw : 0,
-      battery: Number.isFinite(batteryRaw) ? batteryRaw : 0,
-    };
-
-    console.log('[MonitoringScreen] ✅ Parsed telemetry', {
-      deviceMac: parsed.deviceMac,
-      samplingRate: parsed.samplingRate,
-      hr: parsed.hr,
-      spo2: parsed.spo2,
-      temp: parsed.temp,
-      battery: parsed.battery,
-    });
-
-    return parsed;
-  };
+  // ✅ parseTelemetryLine 함수는 이제 types/telemetry.ts의 normalizeTelemetryPayload로 대체됨
 
   // 펫 정보 (실제로는 데이터베이스나 설정에서 가져와야 함)
   const petWeight = 5; // kg (예시)
   const restingHeartRate = 70; // 안정 시 심박수 (BPM)
 
-  // ✅ 표시값: BLE 연결이면 기존 값, 허브 모드면 소켓 telemetry 값 사용
-  const heartRate = (() => {
+  // ✅ 표시값: BLE 연결이면 기존 값, 허브 모드면 소켓 telemetry 값 사용 (단순화 - 파싱된 값을 그대로 사용)
+  // ✅ hr이 7, 8, 9면 "--"로 표시하고 알림 처리
+  const heartRateRaw = (() => {
     if (!isMeasuring) return null;
     if (isBleMode) return state.currentHR;
-    if (isHubMode && hubSelectedTelemetry) return typeof hubSelectedTelemetry?.data?.processedHR === 'number'
-      ? hubSelectedTelemetry.data.processedHR
-      : hubSelectedTelemetry?.data?.hr ?? null;
+    if (isHubMode && hubSelectedTelemetry) {
+      // 파싱된 hr 값을 그대로 사용
+      return hubSelectedTelemetry?.data?.hr ?? null;
+    }
     return null;
   })();
+
+  // ✅ 타입 유틸리티를 사용하여 HR 표시 값 계산 (7, 8, 9는 null로 반환하여 "--" 표시)
+  const heartRate = getDisplayHR(heartRateRaw);
+
+  // ✅ HR 특수 값(7, 8, 9) 알림 처리 (BLE 1:1 연결용, UI 표시용)
+  // 주의: Socket.IO/Hub 경유 데이터는 TelemetryService 구독 콜백에서 알림 처리
+  const [lastHrNotification, setLastHrNotification] = useState<{value: number; timestamp: number} | null>(null);
+  const [lastHubHrNotification, setLastHubHrNotification] = useState<{value: number; timestamp: number} | null>(null); // ✅ Hub 경유 데이터용 쿨다운
+  const HR_NOTIFICATION_COOLDOWN = 60000; // 1분 쿨다운
+
+  useEffect(() => {
+    // ✅ BLE 1:1 연결 모드일 때만 처리 (Hub 모드는 TelemetryService 구독 콜백에서 처리)
+    if (!isBleMode) return;
+    
+    if (heartRateRaw === null || heartRateRaw === undefined) return;
+    if (!isSpecialHRValue(heartRateRaw)) return;
+
+    const now = Date.now();
+    // 쿨다운 체크: 같은 값이면 1분 내에 다시 알림하지 않음
+    if (lastHrNotification && 
+        lastHrNotification.value === heartRateRaw && 
+        now - lastHrNotification.timestamp < HR_NOTIFICATION_COOLDOWN) {
+      return;
+    }
+
+    setLastHrNotification({value: heartRateRaw, timestamp: now});
+
+    const isAppActive = AppState.currentState === 'active';
+    const message = getHRSpecialMessage(heartRateRaw);
+
+    if (!message) return;
+
+    if (isAppActive) {
+      Toast.show({
+        type: heartRateRaw === 8 ? 'error' : 'info',
+        text1: message.title,
+        text2: message.message,
+        position: 'top',
+        visibilityTime: 3000,
+      });
+    } else {
+      // ✅ force=true로 호출하여 background에서 확실히 알림 표시
+      notificationService.showNotification(
+        {
+          title: message.title,
+          body: message.message,
+          data: {
+            type: heartRateRaw === 7 ? 'battery_low' : heartRateRaw === 8 ? 'abnormal_value' : 'motion_detected',
+            hr: heartRateRaw,
+          },
+        },
+        'health-alerts',
+        true, // ✅ force=true: background에서 확실히 알림 표시
+      );
+      console.log('[MonitoringScreen] 📱 HR 특수 값 알림 전송 (BLE)', {
+        hr: heartRateRaw,
+        title: message.title,
+        message: message.message,
+        appState: AppState.currentState,
+      });
+    }
+  }, [heartRateRaw, lastHrNotification, isBleMode]);
   const spo2 = (() => {
     if (!isMeasuring) return null;
     if (isBleMode) return state.currentSpO2;
-    if (isHubMode && hubSelectedTelemetry) return hubSelectedTelemetry?.data?.spo2 ?? null;
+    if (isHubMode && hubSelectedTelemetry) {
+      // 파싱된 spo2 값을 그대로 사용
+      return hubSelectedTelemetry?.data?.spo2 ?? null;
+    }
     return null;
   })();
   const temperature = (() => {
     if (!isMeasuring) return null;
     if (isBleMode) return state.currentTemp?.value ?? null;
-    if (isHubMode && hubSelectedTelemetry) return hubSelectedTelemetry?.data?.temp ?? null;
+    if (isHubMode && hubSelectedTelemetry) {
+      // 파싱된 temp 값을 그대로 사용
+      return hubSelectedTelemetry?.data?.temp ?? null;
+    }
     return null;
   })();
   const battery = (() => {
     if (isBleMode) return state.currentBattery;
-    if (isHubMode && hubSelectedTelemetry) return hubSelectedTelemetry?.data?.battery ?? null;
+    if (isHubMode && hubSelectedTelemetry) {
+      // 파싱된 battery 값을 그대로 사용
+      return hubSelectedTelemetry?.data?.battery ?? null;
+    }
     return state.currentBattery;
   })();
 
@@ -277,8 +291,8 @@ export function MonitoringScreen({
     const setupUserInfo = async () => {
       try {
         const token = await getToken();
-        // 임시로 device_code를 userEmail로 사용 (실제로는 사용자 이메일을 가져와야 함)
-        const userEmail = token?.device_code ? `${token.device_code}@talktail.com` : 'user@talktail.com';
+        // 사용자 이메일 사용
+        const userEmail = token?.email || 'user@talktail.com';
         const petIdStr = String(petId);
         
         bleService.setUserInfo(userEmail, petIdStr);
@@ -394,6 +408,26 @@ export function MonitoringScreen({
     }
   }, [globalHubs, selectedHub]);
   
+  // ✅ 등록된 디바이스 목록 가져오기
+  useEffect(() => {
+    if (!selectedHub) {
+      setRegisteredDevices([]);
+      return;
+    }
+    
+    (async () => {
+      try {
+        const res = await apiService.get<{success: boolean; data: any[]}>(
+          `/device?hubAddress=${encodeURIComponent(selectedHub)}`,
+        );
+        const list: string[] = ((res as any)?.data || []).map((d: any) => String(d.address));
+        setRegisteredDevices(list);
+      } catch {
+        setRegisteredDevices([]);
+      }
+    })();
+  }, [selectedHub]);
+
   // ✅ selectedHub 변경 시 즉시 상태 확인 및 연결된 디바이스 가져오기
   useEffect(() => {
     if (!selectedHub) return;
@@ -414,6 +448,36 @@ export function MonitoringScreen({
       }
     })();
   }, [selectedHub]);
+
+  // ✅ 전체 연결 요청 함수
+  const requestConnectAllDevices = async () => {
+    if (!selectedHub) {
+      Toast.show({type: 'error', text1: '오류', text2: '허브를 선택해주세요.', position: 'bottom'});
+      return;
+    }
+    
+    if (isRequestingDevices) return;
+    
+    setIsRequestingDevices(true);
+    try {
+      await hubSocketService.connect();
+      const requestId = `connect_devices_${selectedHub}_${Date.now()}`;
+      hubSocketService.controlRequest({
+        hubId: selectedHub,
+        deviceId: 'HUB',
+        command: {action: 'connect_devices', duration: 20000},
+        requestId,
+      });
+      hubSocketService.suppressStateHub(selectedHub, 22000);
+      Toast.show({type: 'info', text1: '디바이스 검색 시작', text2: '20초 동안 검색합니다.', position: 'bottom'});
+    } catch {
+      Toast.show({type: 'error', text1: '디바이스 검색 실패', text2: '소켓/네트워크 확인', position: 'bottom'});
+    } finally {
+      setTimeout(() => {
+        setIsRequestingDevices(false);
+      }, 20000);
+    }
+  };
 
   // ✅ Hub 소켓 구독
   useEffect(() => {
@@ -456,135 +520,81 @@ export function MonitoringScreen({
       }
     });
 
-    const offTelemetry = hubSocketService.on('TELEMETRY', (payload: any) => {
-      console.log('[MonitoringScreen] 📥 TELEMETRY received', {
-        payloadType: typeof payload,
-        payloadPreview: typeof payload === 'string' ? payload.slice(0, 100) : JSON.stringify(payload).slice(0, 200),
+    // ✅ TelemetryService를 사용하여 텔레메트리 구독 (중앙화된 파싱 및 처리)
+    const offTelemetry = telemetryService.subscribe((telemetry: NormalizedTelemetry) => {
+      console.log('[MonitoringScreen] 📥 Telemetry received (normalized)', {
+        hubId: telemetry.hubId,
+        deviceId: telemetry.deviceId,
+        hr: telemetry.data.hr,
+        spo2: telemetry.data.spo2,
+        temp: telemetry.data.temp,
+        battery: telemetry.data.battery,
+        timestamp: telemetry._receivedAt,
       });
 
-      // ✅ 1) 기존 sensor_data(object) 지원
-      if (payload && typeof payload === 'object') {
-        const type = payload.type;
-        const deviceId = payload.deviceId;
-        const hubIdFromPayload =
-          typeof payload.hubId === 'string'
-            ? payload.hubId
-            : typeof payload.hubAddress === 'string'
-              ? payload.hubAddress
-              : typeof payload.hub_address === 'string'
-                ? payload.hub_address
-                : '';
+      // ✅ HR 7, 8, 9 알림 처리 (Socket.IO/Hub 경유 데이터)
+      const hr = telemetry.data.hr;
+      if (hr !== null && hr !== undefined && isSpecialHRValue(hr)) {
+        // ✅ 쿨다운 체크: 같은 값이면 1분 내에 다시 알림하지 않음
+        const now = Date.now();
+        if (lastHubHrNotification && 
+            lastHubHrNotification.value === hr && 
+            now - lastHubHrNotification.timestamp < HR_NOTIFICATION_COOLDOWN) {
+          return; // 쿨다운 중이면 알림하지 않음
+        }
 
-        // ✅ 2) data가 문자열로 오는 케이스 지원: "device_mac_address-sampling_rate, hr, spo2, temp, battery"
-        // 예: "d4:d5:3f:28:e1:f4-54.12,8,0,34.06,8"
-        if (type === 'sensor_data' && typeof payload.data === 'string') {
-          const parsed = parseTelemetryLine(payload.data);
-          if (!parsed) {
-            console.warn('[MonitoringScreen] Failed to parse telemetry string', payload.data);
-            return;
+        setLastHubHrNotification({value: hr, timestamp: now});
+
+        const message = getHRSpecialMessage(hr);
+        if (message) {
+          const isAppActive = AppState.currentState === 'active';
+          if (isAppActive) {
+            Toast.show({
+              type: hr === 8 ? 'error' : 'info',
+              text1: message.title,
+              text2: message.message,
+              position: 'top',
+              visibilityTime: 3000,
+            });
+          } else {
+            notificationService.showNotification(
+              {
+                title: message.title,
+                body: message.message,
+                data: {
+                  type: hr === 7 ? 'battery_low' : hr === 8 ? 'abnormal_value' : 'motion_detected',
+                  hr: hr,
+                },
+              },
+              'health-alerts',
+              true, // ✅ force=true: background에서 확실히 알림 표시
+            );
           }
-          const now = Date.now();
-          const normalized = {
-            type: 'sensor_data',
-            hubId: hubIdFromPayload,
-            deviceId: parsed.deviceMac,
-            data: {
-              hr: parsed.hr,
-              spo2: parsed.spo2,
-              temp: parsed.temp,
-              battery: parsed.battery,
-              sampling_rate: parsed.samplingRate,
-              timestamp: now,
-            },
-            _receivedAt: now,
-          };
-          console.log('[MonitoringScreen] ✅ Normalized telemetry for device', {
-            deviceMac: parsed.deviceMac,
-            hr: parsed.hr,
-            spo2: parsed.spo2,
-            temp: parsed.temp,
-            battery: parsed.battery,
-            samplingRate: parsed.samplingRate,
+          console.log('[MonitoringScreen] 📱 HR 특수 값 알림 전송 (Socket.IO)', {
+            hr: hr,
+            title: message.title,
+            message: message.message,
+            appState: AppState.currentState,
           });
-          setLatestTelemetryByDevice(prev => ({...prev, [parsed.deviceMac]: normalized}));
-          setLastHubTelemetryAt(now);
-          // ✅ 허브/디바이스가 선택되지 않았으면 자동 선택 (웹과 동일 UX)
-          if (!selectedHub && hubIdFromPayload) setSelectedHub(hubIdFromPayload);
-          if (!selectedHubDevice) setSelectedHubDevice(parsed.deviceMac);
-          // ✅ 텔레메트리가 들어오면 "측정중"으로 간주
-          if (!isMeasuring) {
-            setIsMeasuring(true);
-            dispatch({type: 'SET_MEASURING', payload: true});
-          }
-          return;
         }
-
-        // ✅ 3) 기존 object 형식 지원 (data가 object인 경우)
-        if (type === 'sensor_data' && payload.data && typeof payload.data === 'object') {
-          if (typeof deviceId !== 'string' || deviceId.length === 0) return;
-          setLatestTelemetryByDevice(prev => ({
-            ...prev,
-            [deviceId]: {...payload, _receivedAt: Date.now()},
-          }));
-          // ✅ 웹(front)과 동일: 텔레메트리가 들어오면 "측정중"으로 간주해서 화면 값 표시
-          if (!isMeasuring) {
-            setIsMeasuring(true);
-            dispatch({type: 'SET_MEASURING', payload: true});
-          }
-          const now = Date.now();
-          setLastHubTelemetryAt(now);
-          if (!selectedHub && hubIdFromPayload) setSelectedHub(hubIdFromPayload);
-          if (!selectedHubDevice && deviceId) setSelectedHubDevice(deviceId);
-          return;
-        }
-
-        // ✅ 다른 타입은 무시
-        return;
       }
 
-      // ✅ 4) payload 자체가 문자열로 오는 케이스 지원
-      // 예: "d4:d5:3f:28:e1:f4-54.12,8,0,34.06,8"
-      if (typeof payload === 'string') {
-        const parsed = parseTelemetryLine(payload);
-        if (!parsed) {
-          console.warn('[MonitoringScreen] Failed to parse telemetry string', payload);
-          return;
-        }
-        const now = Date.now();
-        const normalized = {
-          type: 'sensor_data',
-          hubId: selectedHub,
-          deviceId: parsed.deviceMac,
-          data: {
-            hr: parsed.hr,
-            spo2: parsed.spo2,
-            temp: parsed.temp,
-            battery: parsed.battery,
-            sampling_rate: parsed.samplingRate,
-            timestamp: now,
-          },
-          _receivedAt: now,
-        };
-        console.log('[MonitoringScreen] ✅ Normalized telemetry from string', {
-          deviceMac: parsed.deviceMac,
-          hr: parsed.hr,
-          spo2: parsed.spo2,
-          temp: parsed.temp,
-          battery: parsed.battery,
-          samplingRate: parsed.samplingRate,
-        });
-        setLatestTelemetryByDevice(prev => ({...prev, [parsed.deviceMac]: normalized}));
-        setLastHubTelemetryAt(now);
-        if (!isMeasuring) {
-          setIsMeasuring(true);
-          dispatch({type: 'SET_MEASURING', payload: true});
-        }
-        if (!selectedHubDevice) setSelectedHubDevice(parsed.deviceMac);
+      // ✅ 디바이스별 데이터 저장
+      setLatestTelemetryByDevice(prev => ({...prev, [telemetry.deviceId]: telemetry}));
+      setLastHubTelemetryAt(telemetry._receivedAt);
+
+      // ✅ 허브/디바이스가 선택되지 않았으면 자동 선택
+      if (!selectedHub && telemetry.hubId) setSelectedHub(telemetry.hubId);
+      if (!selectedHubDevice && telemetry.deviceId) setSelectedHubDevice(telemetry.deviceId);
+
+      // ✅ 텔레메트리가 들어오면 "측정중"으로 간주
+      if (!isMeasuring) {
+        setIsMeasuring(true);
+        dispatch({type: 'SET_MEASURING', payload: true});
       }
     });
 
     return () => {
-      cancelled = true;
       offConnectedDevices();
       offTelemetry();
     };
@@ -730,8 +740,26 @@ export function MonitoringScreen({
       setIsMeasuring(true);
       dispatch({type: 'SET_MEASURING', payload: true});
 
-      await hubSocketService.connect();
+      // ✅ 소켓 연결 확인 및 연결 시도
+      if (!hubSocketService.isConnected()) {
+        console.log('[MonitoringScreen] 소켓 연결 시도 중...');
+        await hubSocketService.connect();
+        // ✅ 연결 후 잠시 대기 (소켓이 완전히 연결될 때까지)
+        await new Promise<void>(resolve => setTimeout(() => resolve(), 500));
+      }
+
+      if (!hubSocketService.isConnected()) {
+        throw new Error('소켓 연결에 실패했습니다. 네트워크를 확인해주세요.');
+      }
+
       const requestId = `start_measurement_${selectedHub}_${selectedHubDevice}_${Date.now()}`;
+      console.log('[MonitoringScreen] 📤 측정 시작 명령 전송', {
+        hubId: selectedHub,
+        deviceId: selectedHubDevice,
+        requestId,
+        command: {action: 'start_measurement', raw_command: `start:${selectedHubDevice}`},
+      });
+      
       hubSocketService.controlRequest({
         hubId: selectedHub,
         deviceId: selectedHubDevice,
@@ -753,7 +781,10 @@ export function MonitoringScreen({
         text2: errorMessage,
         position: 'bottom',
       });
-      console.error('측정 시작 실패:', error);
+      console.error('[MonitoringScreen] ❌ 측정 시작 실패:', error);
+      // ✅ 에러 발생 시 측정 상태 초기화
+      setIsMeasuring(false);
+      dispatch({type: 'SET_MEASURING', payload: false});
     } finally {
       setMeasurementLoading(false);
     }
@@ -818,14 +849,33 @@ export function MonitoringScreen({
       setIsMeasuring(false);
       dispatch({type: 'SET_MEASURING', payload: false});
 
-      await hubSocketService.connect();
+      // ✅ 소켓 연결 확인 및 연결 시도
+      if (!hubSocketService.isConnected()) {
+        console.log('[MonitoringScreen] 소켓 연결 시도 중...');
+        await hubSocketService.connect();
+        // ✅ 연결 후 잠시 대기 (소켓이 완전히 연결될 때까지)
+        await new Promise<void>(resolve => setTimeout(() => resolve(), 500));
+      }
+
+      if (!hubSocketService.isConnected()) {
+        throw new Error('소켓 연결에 실패했습니다. 네트워크를 확인해주세요.');
+      }
+
       const requestId = `stop_measurement_${selectedHub}_${selectedHubDevice}_${Date.now()}`;
+      console.log('[MonitoringScreen] 📤 측정 중지 명령 전송', {
+        hubId: selectedHub,
+        deviceId: selectedHubDevice,
+        requestId,
+        command: {action: 'stop_measurement', raw_command: `stop:${selectedHubDevice}`},
+      });
+      
       hubSocketService.controlRequest({
         hubId: selectedHub,
         deviceId: selectedHubDevice,
         command: {action: 'stop_measurement', raw_command: `stop:${selectedHubDevice}`},
         requestId,
       });
+      
       Toast.show({
         type: 'success',
         text1: '측정 중지',
@@ -840,6 +890,7 @@ export function MonitoringScreen({
         text2: errorMessage,
         position: 'bottom',
       });
+      console.error('[MonitoringScreen] ❌ 측정 중지 실패:', error);
     } finally {
       setMeasurementLoading(false);
     }
@@ -986,36 +1037,58 @@ export function MonitoringScreen({
           {(isBleMode || isHubMode) && (
             <View style={styles.measurementControl}>
               {/* Hub 모드: 온라인 디바이스 선택 바 */}
-              {isHubMode && hubConnectedNow.length > 0 && (
+              {isHubMode && (
                 <View style={{marginBottom: 10}}>
-                  <Text style={[styles.sectionTitle, {marginBottom: 8}]}>온라인 디바이스 선택</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                    <View style={{flexDirection: 'row', gap: 8}}>
-                      {hubConnectedNow.map(mac => {
-                        const active = mac === selectedHubDevice;
-                        return (
-                          <TouchableOpacity
-                            key={mac}
-                            onPress={() => setSelectedHubDevice(mac)}
-                            style={[
-                              {
-                                paddingHorizontal: 12,
-                                paddingVertical: 8,
-                                borderRadius: 16,
-                                borderWidth: 1,
-                                borderColor: active ? '#2E8B7E' : '#E5E7EB',
-                                backgroundColor: active ? '#E7F5F4' : '#FFFFFF',
-                              },
-                            ]}
-                            activeOpacity={0.85}>
-                            <Text style={{fontSize: 12, fontWeight: '800', color: active ? '#2E8B7E' : '#374151'}}>
-                              {mac}
-                            </Text>
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </View>
-                  </ScrollView>
+                  <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8}}>
+                    <Text style={[styles.sectionTitle]}>온라인 디바이스</Text>
+                    <TouchableOpacity
+                      onPress={requestConnectAllDevices}
+                      disabled={isRequestingDevices}
+                      style={{
+                        paddingHorizontal: 12,
+                        paddingVertical: 6,
+                        borderRadius: 8,
+                        backgroundColor: isRequestingDevices ? '#9CA3AF' : '#2E8B7E',
+                      }}
+                      activeOpacity={0.85}>
+                      <Text style={{fontSize: 12, fontWeight: '600', color: 'white'}}>
+                        {isRequestingDevices ? '검색 중...' : '전체 연결'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                  {hubConnectedNow.length > 0 ? (
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                      <View style={{flexDirection: 'row', gap: 8}}>
+                        {hubConnectedNow.map(mac => {
+                          const active = mac === selectedHubDevice;
+                          return (
+                            <TouchableOpacity
+                              key={mac}
+                              onPress={() => setSelectedHubDevice(mac)}
+                              style={[
+                                {
+                                  paddingHorizontal: 12,
+                                  paddingVertical: 8,
+                                  borderRadius: 16,
+                                  borderWidth: 1,
+                                  borderColor: active ? '#2E8B7E' : '#E5E7EB',
+                                  backgroundColor: active ? '#E7F5F4' : '#FFFFFF',
+                                },
+                              ]}
+                              activeOpacity={0.85}>
+                              <Text style={{fontSize: 12, fontWeight: '800', color: active ? '#2E8B7E' : '#374151'}}>
+                                {mac}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                    </ScrollView>
+                  ) : (
+                    <Text style={{fontSize: 12, color: '#9CA3AF', marginTop: 4}}>
+                      등록된 온라인 디바이스가 없습니다.
+                    </Text>
+                  )}
                 </View>
               )}
               {!isMeasuring ? (
@@ -1071,73 +1144,6 @@ export function MonitoringScreen({
             </View>
           </View>
         </View>
-
-        {/* ✅ 디바이스별 실시간 데이터 카드 (허브 모드일 때만) */}
-        {isHubMode && Object.keys(latestTelemetryByDevice).length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>디바이스별 실시간 데이터</Text>
-            {Object.entries(latestTelemetryByDevice).map(([deviceMac, telemetry]) => {
-              const deviceData = telemetry?.data || {};
-              const deviceHr = deviceData.hr ?? 0;
-              const deviceSpo2 = deviceData.spo2 ?? 0;
-              const deviceTemp = deviceData.temp ?? 0;
-              const deviceBattery = deviceData.battery ?? 0;
-              const isActive = deviceMac === selectedHubDevice;
-              const receivedAt = telemetry?._receivedAt;
-              const timeAgo = receivedAt ? Math.floor((Date.now() - receivedAt) / 1000) : null;
-
-              return (
-                <TouchableOpacity
-                  key={deviceMac}
-                  onPress={() => setSelectedHubDevice(deviceMac)}
-                  style={[
-                    styles.deviceDataCard,
-                    isActive && styles.deviceDataCardActive,
-                  ]}
-                  activeOpacity={0.85}>
-                  <View style={styles.deviceDataHeader}>
-                    <View style={styles.deviceDataHeaderLeft}>
-                      <View style={[styles.deviceDataDot, {backgroundColor: isActive ? '#2E8B7E' : '#9CA3AF'}]} />
-                      <Text style={styles.deviceDataMac}>{deviceMac}</Text>
-                    </View>
-                    {timeAgo !== null && (
-                      <Text style={styles.deviceDataTime}>
-                        {timeAgo < 60 ? `${timeAgo}초 전` : `${Math.floor(timeAgo / 60)}분 전`}
-                      </Text>
-                    )}
-                  </View>
-                  
-                  <View style={styles.deviceDataGrid}>
-                    <View style={styles.deviceDataItem}>
-                      <Heart size={16} color="#F03F3F" />
-                      <Text style={styles.deviceDataLabel}>심박수</Text>
-                      <Text style={styles.deviceDataValue}>{deviceHr > 0 ? deviceHr : '--'}</Text>
-                      <Text style={styles.deviceDataUnit}>BPM</Text>
-                    </View>
-                    <View style={styles.deviceDataItem}>
-                      <Droplet size={16} color="#2E8B7E" />
-                      <Text style={styles.deviceDataLabel}>SpO2</Text>
-                      <Text style={styles.deviceDataValue}>{deviceSpo2 > 0 ? deviceSpo2 : '--'}</Text>
-                      <Text style={styles.deviceDataUnit}>%</Text>
-                    </View>
-                    <View style={styles.deviceDataItem}>
-                      <Thermometer size={16} color="#FFB02E" />
-                      <Text style={styles.deviceDataLabel}>체온</Text>
-                      <Text style={styles.deviceDataValue}>{deviceTemp > 0 ? deviceTemp.toFixed(1) : '--'}</Text>
-                      <Text style={styles.deviceDataUnit}>°C</Text>
-                    </View>
-                    <View style={styles.deviceDataItem}>
-                      <Battery size={16} color="#4F46E5" />
-                      <Text style={styles.deviceDataLabel}>배터리</Text>
-                      <Text style={styles.deviceDataValue}>{deviceBattery > 0 ? deviceBattery : '--'}</Text>
-                      <Text style={styles.deviceDataUnit}>%</Text>
-                    </View>
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        )}
 
         {/* Battery (별도 표시) */}
         <View style={styles.section}>
