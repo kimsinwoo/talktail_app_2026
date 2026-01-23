@@ -32,6 +32,7 @@ import {
   Activity,
   MessageCircle,
   MapPin,
+  FileText,
 } from 'lucide-react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
@@ -213,6 +214,9 @@ export function HomeScreen({
     condition: '맑음',
     airQuality: '좋음',
     summary: '오늘은 산책하기 무난한 날씨예요',
+    temperature: 22,
+    humidity: 65,
+    windSpeed: 3.5,
     pm10: 25,
     pm25: 15,
   };
@@ -385,9 +389,6 @@ export function HomeScreen({
                     </View>
                     <View style={styles.petProfileDetails}>
                       <Text style={styles.petProfileName}>{pet.name}</Text>
-                      <Text style={styles.petProfileSubtext}>
-                        {pet.breed || '품종'} · {pet.species || '반려동물'}
-                      </Text>
                     </View>
                   </View>
                   {/* 상태 요약 */}
@@ -627,6 +628,24 @@ export function HomeScreen({
             {isWeatherExpanded && (
               <View style={styles.weatherExpandedContent}>
                 <View style={styles.weatherDetailRow}>
+                  <Text style={styles.weatherDetailLabel}>온도</Text>
+                  <Text style={styles.weatherDetailValue}>
+                    {weatherInfo.temperature}°C
+                  </Text>
+                </View>
+                <View style={styles.weatherDetailRow}>
+                  <Text style={styles.weatherDetailLabel}>습도</Text>
+                  <Text style={styles.weatherDetailValue}>
+                    {weatherInfo.humidity}%
+                  </Text>
+                </View>
+                <View style={styles.weatherDetailRow}>
+                  <Text style={styles.weatherDetailLabel}>풍속</Text>
+                  <Text style={styles.weatherDetailValue}>
+                    {weatherInfo.windSpeed}m/s
+                  </Text>
+                </View>
+                <View style={styles.weatherDetailRow}>
                   <Text style={styles.weatherDetailLabel}>미세먼지</Text>
                   <Text style={styles.weatherDetailValue}>
                     PM10: {weatherInfo.pm10} / PM2.5: {weatherInfo.pm25}
@@ -678,16 +697,27 @@ export function HomeScreen({
               style={styles.serviceIconCard}
               activeOpacity={0.85}
               onPress={() => {
-                Toast.show({
-                  type: 'info',
-                  text1: '이미지 생성 서비스는 준비중입니다',
-                  position: 'bottom',
+                const pet = displayPets[currentPetIndex];
+                navigateTo('ImageGeneration', {
+                  petCode: pet?.pet_code || selectedPetCode,
+                  petName: pet?.name || '반려동물',
                 });
               }}>
               <View style={[styles.serviceIconContainer, {backgroundColor: '#F3F0FF'}]}>
                 <ImageIcon size={24} color="#9B87F5" />
               </View>
               <Text style={styles.serviceIconTitle}>이미지 생성</Text>
+            </TouchableOpacity>
+
+            {/* 건강 리포트 */}
+            <TouchableOpacity
+              style={styles.serviceIconCard}
+              activeOpacity={0.85}
+              onPress={() => navigateTo('HealthReport')}>
+              <View style={[styles.serviceIconContainer, {backgroundColor: '#E7F5F4'}]}>
+                <FileText size={24} color="#2E8B7E" />
+              </View>
+              <Text style={styles.serviceIconTitle}>건강 리포트</Text>
             </TouchableOpacity>
 
             {/* 건강 질문 도우미 */}
@@ -722,7 +752,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: 100,
+    paddingBottom: 32,
   },
   loadingContainer: {
     flex: 1,
@@ -805,8 +835,8 @@ const styles = StyleSheet.create({
   },
   // 반려동물 프로필 섹션
   petProfileSection: {
-    marginTop: 20,
-    marginBottom: 8,
+    marginTop: 24,
+    marginBottom: 0,
     position: 'relative',
     paddingHorizontal: 16,
     overflow: 'visible',
@@ -827,8 +857,8 @@ const styles = StyleSheet.create({
   petProfileContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    marginBottom: 12,
+    gap: 14,
+    marginBottom: 0,
   },
   petProfileAvatar: {
     width: 48,
@@ -871,8 +901,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    paddingTop: 12,
-    paddingHorizontal: 2,
+    paddingTop: 16,
+    marginTop: 16,
+    paddingHorizontal: 0,
     borderTopWidth: 1,
     borderTopColor: '#F0F4F8',
   },
@@ -928,7 +959,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     gap: 6,
-    marginTop: 12,
+    marginTop: 16,
+    marginBottom: 4,
   },
   pageDot: {
     width: 6,
@@ -942,26 +974,26 @@ const styles = StyleSheet.create({
   },
   // 반려동물 종속 섹션
   petDependentSection: {
-    marginTop: 20,
-    marginBottom: 8,
+    marginTop: 24,
+    marginBottom: 0,
     position: 'relative',
   },
   petDependentContainer: {
     width: SCREEN_WIDTH,
     paddingHorizontal: 16,
-    gap: 10,
+    gap: 12,
   },
   // 핵심 카드
   coreCard: {
     backgroundColor: 'white',
     borderRadius: 16,
-    padding: 16,
+    padding: 18,
     borderWidth: 1,
     borderColor: '#E8ECF0',
     shadowColor: '#000',
-    shadowOffset: {width: 0, height: 2},
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
+    shadowOffset: {width: 0, height: 1},
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
     elevation: 2,
   },
   coreCardHighlight: {
@@ -972,18 +1004,18 @@ const styles = StyleSheet.create({
   coreCardHeader: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 12,
-    marginBottom: 14,
+    gap: 14,
+    marginBottom: 16,
   },
   coreCardIcon: {
     width: 44,
     height: 44,
-    borderRadius: 14,
+    borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#000',
     shadowOffset: {width: 0, height: 1},
-    shadowOpacity: 0.08,
+    shadowOpacity: 0.06,
     shadowRadius: 3,
     elevation: 1,
   },
@@ -993,8 +1025,8 @@ const styles = StyleSheet.create({
   coreCardTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    marginBottom: 6,
+    gap: 8,
+    marginBottom: 8,
   },
   coreCardTitle: {
     fontSize: 16,
@@ -1028,7 +1060,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingTop: 12,
+    paddingTop: 16,
+    marginTop: 16,
     borderTopWidth: 1,
     borderTopColor: '#F0F4F8',
   },
@@ -1062,21 +1095,21 @@ const styles = StyleSheet.create({
   // 트렌드 카드
   trendCard: {
     backgroundColor: '#FFF9F0',
-    borderRadius: 18,
+    borderRadius: 16,
     padding: 18,
     borderWidth: 1,
     borderColor: '#FFE5D9',
     shadowColor: '#FFB02E',
-    shadowOffset: {width: 0, height: 2},
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
+    shadowOffset: {width: 0, height: 1},
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
     elevation: 2,
   },
   trendCardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    marginBottom: 12,
+    marginBottom: 14,
   },
   trendCardTitle: {
     fontSize: 15,
@@ -1094,19 +1127,19 @@ const styles = StyleSheet.create({
   // 섹션
   section: {
     paddingHorizontal: 16,
-    marginTop: 20,
+    marginTop: 24,
   },
   // 날씨 카드
   weatherCard: {
     backgroundColor: 'white',
-    borderRadius: 18,
+    borderRadius: 16,
     padding: 18,
     borderWidth: 1,
     borderColor: '#E8ECF0',
     shadowColor: '#000',
-    shadowOffset: {width: 0, height: 2},
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
+    shadowOffset: {width: 0, height: 1},
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
     elevation: 2,
   },
   weatherCardHeader: {
@@ -1128,10 +1161,11 @@ const styles = StyleSheet.create({
     letterSpacing: -0.2,
   },
   weatherExpandedContent: {
-    marginTop: 12,
-    paddingTop: 12,
+    marginTop: 16,
+    paddingTop: 16,
     borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
+    borderTopColor: '#F0F4F8',
+    gap: 12,
   },
   weatherDetailRow: {
     flexDirection: 'row',
@@ -1152,25 +1186,26 @@ const styles = StyleSheet.create({
   serviceGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    marginTop: 12,
+    marginTop: 16,
     marginHorizontal: -6,
+    marginBottom: 4,
   },
   serviceIconCard: {
     width: '33.333%',
     paddingHorizontal: 6,
-    marginBottom: 12,
+    marginBottom: 16,
     alignItems: 'center',
   },
   serviceIconContainer: {
     width: 64,
     height: 64,
-    borderRadius: 18,
+    borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 10,
     shadowColor: '#000',
-    shadowOffset: {width: 0, height: 2},
-    shadowOpacity: 0.1,
+    shadowOffset: {width: 0, height: 1},
+    shadowOpacity: 0.08,
     shadowRadius: 4,
     elevation: 2,
   },

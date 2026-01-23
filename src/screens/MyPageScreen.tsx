@@ -175,15 +175,6 @@ export function MyPageScreen(/* {onAddToCart}: MyPageScreenProps */) {
       case 'settings':
         (navigation as any).navigate('AppSettings');
         break;
-      case 'walk':
-        (navigation as any).navigate('WalkHistory');
-        break;
-      case 'hospital':
-        (navigation as any).navigate('HospitalFinder');
-        break;
-      case 'healthReport':
-        (navigation as any).navigate('HealthReport');
-        break;
       default:
         Toast.show({
           type: 'info',
@@ -249,7 +240,7 @@ export function MyPageScreen(/* {onAddToCart}: MyPageScreenProps */) {
               </View>
 
               {/* Stats */}
-              <View style={styles.statsContainer}>
+              {/* <View style={styles.statsContainer}>
                 <View style={styles.statItem}>
                   <Text style={[styles.statValue, styles.statValuePrimary]}>
                     {pets.length}
@@ -268,157 +259,73 @@ export function MyPageScreen(/* {onAddToCart}: MyPageScreenProps */) {
                   </Text>
                   <Text style={styles.statLabel}>아이디</Text>
                 </View>
-              </View>
+              </View> */}
             </>
           )}
         </View>
 
-        {/* 펫 목록 섹션 */}
-        {!isLoading && pets.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>등록된 반려동물</Text>
-            {pets.map(pet => (
-              <TouchableOpacity
-                key={pet.pet_code}
-                style={styles.petCard}
-                activeOpacity={0.7}>
-                <View style={styles.petIconContainer}>
-                  <PawPrint size={20} color="#f0663f" />
-                </View>
-                <View style={styles.petInfo}>
-                  <Text style={styles.petName}>{pet.name}</Text>
-                  <Text style={styles.petDetails}>
-                    {pet.species} • {pet.breed} • {pet.gender ? '수컷' : '암컷'}
-                  </Text>
-                  {pet.weight && (
-                    <Text style={styles.petWeight}>체중: {pet.weight}kg</Text>
-                  )}
-                </View>
-                <ChevronRight size={20} color="#CCCCCC" />
-              </TouchableOpacity>
-            ))}
-          </View>
-        )}
-
-        {!isLoading && pets.length === 0 && (
-          <View style={styles.section}>
-            <View style={styles.emptyPetContainer}>
-              <PawPrint size={32} color="#CCCCCC" />
-              <Text style={styles.emptyPetText}>등록된 반려동물이 없습니다</Text>
-              <TouchableOpacity
-                style={styles.petRegisterButton}
-                onPress={() => (navigation as any).navigate('PetRegister')}
-                activeOpacity={0.8}>
-                <Text style={styles.petRegisterButtonText}>반려동물 등록하기</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
-
         {/* Menu Items */}
-        <View style={styles.section}>
-          {menuItems.map(item => {
-            const Icon = item.icon;
-            return (
-              <TouchableOpacity
-                key={item.id}
-                style={styles.menuItem}
-                onPress={() => handleMenuClick(item.id)}
-                activeOpacity={0.7}>
-                <View
-                  style={[
-                    styles.menuIconContainer,
-                    {backgroundColor: item.bgColor},
-                  ]}>
-                  <Icon size={22} color={item.color} />
-                </View>
-                <View style={styles.menuInfo}>
-                  <Text style={styles.menuTitle}>{item.title}</Text>
-                  <Text style={styles.menuSubtitle}>{item.subtitle}</Text>
-                </View>
-                <ChevronRight size={20} color="#CCCCCC" />
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+        {!isLoading && (
+          <View style={styles.section}>
+            {menuItems.map(item => {
+              const Icon = item.icon;
+              return (
+                <TouchableOpacity
+                  key={item.id}
+                  style={styles.menuItem}
+                  onPress={() => handleMenuClick(item.id)}
+                  activeOpacity={0.7}>
+                  <View
+                    style={[
+                      styles.menuIconContainer,
+                      {backgroundColor: item.bgColor},
+                    ]}>
+                    <Icon size={22} color={item.color} />
+                  </View>
+                  <View style={styles.menuInfo}>
+                    <Text style={styles.menuTitle}>{item.title}</Text>
+                    <Text style={styles.menuSubtitle}>{item.subtitle}</Text>
+                  </View>
+                  <ChevronRight size={20} color="#CCCCCC" />
+                </TouchableOpacity>
+              );
+            })}
 
-        {/* Settings & Logout */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Settings</Text>
-          <TouchableOpacity
-            style={styles.menuItem}
-            onPress={() => handleMenuClick('settings')}
-            activeOpacity={0.7}>
-            <View style={[styles.menuIconContainer, styles.settingsIconContainer]}>
-              <Settings size={22} color="#666666" />
-            </View>
-            <View style={styles.menuInfo}>
-              <Text style={styles.menuTitle}>앱 설정</Text>
-            </View>
-            <ChevronRight size={20} color="#CCCCCC" />
-          </TouchableOpacity>
+            {/* 권한 설정 */}
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() => handleMenuClick('settings')}
+              activeOpacity={0.7}>
+              <View style={[styles.menuIconContainer, styles.settingsIconContainer]}>
+                <Settings size={22} color="#666666" />
+              </View>
+              <View style={styles.menuInfo}>
+                <Text style={styles.menuTitle}>권한 설정</Text>
+              </View>
+              <ChevronRight size={20} color="#CCCCCC" />
+            </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.menuItem}
-            onPress={() => handleMenuClick('healthReport')}
-            activeOpacity={0.7}>
-            <View style={[styles.menuIconContainer, {backgroundColor: '#E7F5F4'}]}>
-              <PawPrint size={22} color="#2E8B7E" />
-            </View>
-            <View style={styles.menuInfo}>
-              <Text style={styles.menuTitle}>건강 리포트</Text>
-              <Text style={styles.menuSubtitle}>최근 측정 요약</Text>
-            </View>
-            <ChevronRight size={20} color="#CCCCCC" />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.menuItem}
-            onPress={() => handleMenuClick('walk')}
-            activeOpacity={0.7}>
-            <View style={[styles.menuIconContainer, {backgroundColor: '#FFF4E6'}]}>
-              <PawPrint size={22} color="#FFB02E" />
-            </View>
-            <View style={styles.menuInfo}>
-              <Text style={styles.menuTitle}>산책 기록</Text>
-              <Text style={styles.menuSubtitle}>거리/시간 기록</Text>
-            </View>
-            <ChevronRight size={20} color="#CCCCCC" />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.menuItem}
-            onPress={() => handleMenuClick('hospital')}
-            activeOpacity={0.7}>
-            <View style={[styles.menuIconContainer, {backgroundColor: '#FEF0EB'}]}>
-              <PawPrint size={22} color="#f0663f" />
-            </View>
-            <View style={styles.menuInfo}>
-              <Text style={styles.menuTitle}>병원 찾기</Text>
-              <Text style={styles.menuSubtitle}>주변 동물병원</Text>
-            </View>
-            <ChevronRight size={20} color="#CCCCCC" />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.menuItem}
-            onPress={handleLogout}
-            disabled={logoutLoading}
-            activeOpacity={0.7}>
-            <View style={[styles.menuIconContainer, styles.logoutIconContainer]}>
-              {logoutLoading ? (
-                <ActivityIndicator size="small" color="#F03F3F" />
-              ) : (
-                <LogOut size={22} color="#F03F3F" />
-              )}
-            </View>
-            <View style={styles.menuInfo}>
-              <Text style={[styles.menuTitle, styles.logoutTitle]}>
-                {logoutLoading ? '로그아웃 중...' : '로그아웃'}
-              </Text>
-            </View>
-          </TouchableOpacity>
-        </View>
+            {/* 로그아웃 */}
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={handleLogout}
+              disabled={logoutLoading}
+              activeOpacity={0.7}>
+              <View style={[styles.menuIconContainer, styles.logoutIconContainer]}>
+                {logoutLoading ? (
+                  <ActivityIndicator size="small" color="#F03F3F" />
+                ) : (
+                  <LogOut size={22} color="#F03F3F" />
+                )}
+              </View>
+              <View style={styles.menuInfo}>
+                <Text style={[styles.menuTitle, styles.logoutTitle]}>
+                  {logoutLoading ? '로그아웃 중...' : '로그아웃'}
+                </Text>
+              </View>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* Version Info */}
         <View style={styles.versionContainer}>
@@ -438,7 +345,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: 100,
+    paddingBottom: 40,
   },
   header: {
     backgroundColor: 'white',
@@ -533,7 +440,7 @@ const styles = StyleSheet.create({
   },
   section: {
     paddingHorizontal: 16,
-    marginTop: 20,
+    marginTop: 16,
   },
   sectionTitle: {
     fontSize: 15,
@@ -556,7 +463,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 16,
-    marginBottom: 8,
+    marginBottom: 10,
   },
   menuIconContainer: {
     width: 44,
