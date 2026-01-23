@@ -30,6 +30,8 @@ import {
   Heart,
   Image as ImageIcon,
   Activity,
+  MessageCircle,
+  MapPin,
 } from 'lucide-react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
@@ -634,70 +636,77 @@ export function HomeScreen({
             )}
           </TouchableOpacity>
 
-          {/* 웨어러블 디바이스 카드 */}
-          <TouchableOpacity
-            style={styles.serviceCard}
-            activeOpacity={0.85}
-            onPress={() => {
-              (navigation as any).navigate('Monitoring');
-            }}>
-            <View style={styles.serviceCardHeader}>
-              <View style={[styles.serviceCardIcon, {backgroundColor: '#E7F5F4'}]}>
-                <Activity size={20} color="#2E8B7E" />
+          {/* 서비스 아이콘 그리드 */}
+          <View style={styles.serviceGrid}>
+            {/* 웨어러블 모니터링 */}
+            <TouchableOpacity
+              style={styles.serviceIconCard}
+              activeOpacity={0.85}
+              onPress={() => {
+                (navigation as any).navigate('Monitoring');
+              }}>
+              <View style={[styles.serviceIconContainer, {backgroundColor: '#E7F5F4'}]}>
+                <Activity size={24} color="#2E8B7E" />
               </View>
-              <View style={styles.serviceCardContent}>
-                <Text style={styles.serviceCardTitle}>웨어러블 모니터링</Text>
-                <Text style={styles.serviceCardSubtitle}>
-                  실시간으로 반려동물의 건강 상태를 확인해보세요
-                </Text>
-              </View>
-              <ChevronRight size={18} color="#2E8B7E" />
-            </View>
-          </TouchableOpacity>
+              <Text style={styles.serviceIconTitle}>웨어러블</Text>
+            </TouchableOpacity>
 
-          {/* 피부 진단 카드 */}
-          <TouchableOpacity
-            style={styles.serviceCard}
-            activeOpacity={0.85}
-            onPress={() => navigateTo('HealthCheckStart')}>
-            <View style={styles.serviceCardHeader}>
-              <View style={[styles.serviceCardIcon, {backgroundColor: '#FEF0EB'}]}>
-                <Sparkles size={20} color="#f0663f" />
+            {/* 피부 진단 */}
+            <TouchableOpacity
+              style={styles.serviceIconCard}
+              activeOpacity={0.85}
+              onPress={() => navigateTo('HealthCheckStart')}>
+              <View style={[styles.serviceIconContainer, {backgroundColor: '#FEF0EB'}]}>
+                <Sparkles size={24} color="#f0663f" />
               </View>
-              <View style={styles.serviceCardContent}>
-                <Text style={styles.serviceCardTitle}>피부 진단</Text>
-                <Text style={styles.serviceCardSubtitle}>
-                  AI로 반려동물의 피부 상태를 확인해보세요
-                </Text>
-              </View>
-              <ChevronRight size={18} color="#f0663f" />
-            </View>
-          </TouchableOpacity>
+              <Text style={styles.serviceIconTitle}>피부 진단</Text>
+            </TouchableOpacity>
 
-          {/* 이미지 생성 카드 */}
-          <TouchableOpacity
-            style={styles.serviceCard}
-            activeOpacity={0.85}
-            onPress={() => {
-              Toast.show({
-                type: 'info',
-                text1: '이미지 생성 서비스는 준비중입니다',
-                position: 'bottom',
-              });
-            }}>
-            <View style={styles.serviceCardHeader}>
-              <View style={[styles.serviceCardIcon, {backgroundColor: '#F3F0FF'}]}>
-                <ImageIcon size={20} color="#9B87F5" />
+            {/* 근처 병원 찾기 */}
+            <TouchableOpacity
+              style={styles.serviceIconCard}
+              activeOpacity={0.85}
+              onPress={() => navigateTo('HospitalFinder')}>
+              <View style={[styles.serviceIconContainer, {backgroundColor: '#FFF4E6'}]}>
+                <MapPin size={24} color="#FF8C42" />
               </View>
-              <View style={styles.serviceCardContent}>
-                <Text style={styles.serviceCardTitle}>이미지 생성</Text>
-                <Text style={styles.serviceCardSubtitle}>
-                  반려동물의 특별한 순간을 이미지로 만들어보세요
-                </Text>
+              <Text style={styles.serviceIconTitle}>병원 찾기</Text>
+            </TouchableOpacity>
+
+            {/* 이미지 생성 */}
+            <TouchableOpacity
+              style={styles.serviceIconCard}
+              activeOpacity={0.85}
+              onPress={() => {
+                Toast.show({
+                  type: 'info',
+                  text1: '이미지 생성 서비스는 준비중입니다',
+                  position: 'bottom',
+                });
+              }}>
+              <View style={[styles.serviceIconContainer, {backgroundColor: '#F3F0FF'}]}>
+                <ImageIcon size={24} color="#9B87F5" />
               </View>
-              <ChevronRight size={18} color="#9B87F5" />
-            </View>
-          </TouchableOpacity>
+              <Text style={styles.serviceIconTitle}>이미지 생성</Text>
+            </TouchableOpacity>
+
+            {/* 건강 질문 도우미 */}
+            <TouchableOpacity
+              style={styles.serviceIconCard}
+              activeOpacity={0.85}
+              onPress={() => {
+                const pet = displayPets[currentPetIndex];
+                navigateTo('HealthConsultation', {
+                  petCode: pet?.pet_code || selectedPetCode,
+                  petName: pet?.name || '반려동물',
+                });
+              }}>
+              <View style={[styles.serviceIconContainer, {backgroundColor: '#E7F5F4'}]}>
+                <MessageCircle size={24} color="#2E8B7E" />
+              </View>
+              <Text style={styles.serviceIconTitle}>건강 질문</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -1139,7 +1148,40 @@ const styles = StyleSheet.create({
     color: '#111111',
     fontWeight: '600',
   },
-  // 서비스 카드
+  // 서비스 아이콘 그리드
+  serviceGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: 12,
+    marginHorizontal: -6,
+  },
+  serviceIconCard: {
+    width: '33.333%',
+    paddingHorizontal: 6,
+    marginBottom: 12,
+    alignItems: 'center',
+  },
+  serviceIconContainer: {
+    width: 64,
+    height: 64,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 2},
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  serviceIconTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#4A5568',
+    textAlign: 'center',
+    letterSpacing: -0.2,
+  },
+  // 서비스 카드 (레거시 - 사용 안 함)
   serviceCard: {
     backgroundColor: 'white',
     borderRadius: 18,
@@ -1183,6 +1225,55 @@ const styles = StyleSheet.create({
   serviceCardSubtitle: {
     fontSize: 13,
     color: '#718096',
+    fontWeight: '500',
+    lineHeight: 18,
+    letterSpacing: -0.2,
+  },
+  // 건강 상담 카드
+  consultationCard: {
+    backgroundColor: '#E7F5F4',
+    borderRadius: 18,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: '#D8EFED',
+    marginTop: 12,
+    shadowColor: '#2E8B7E',
+    shadowOffset: {width: 0, height: 2},
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  consultationCardContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
+  consultationIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: 'white',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 2},
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  consultationTextContainer: {
+    flex: 1,
+  },
+  consultationTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1A202C',
+    marginBottom: 4,
+    letterSpacing: -0.3,
+  },
+  consultationSubtitle: {
+    fontSize: 13,
+    color: '#4A5568',
     fontWeight: '500',
     lineHeight: 18,
     letterSpacing: -0.2,

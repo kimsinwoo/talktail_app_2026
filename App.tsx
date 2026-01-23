@@ -50,6 +50,7 @@ import {DiaryWriteScreen} from './src/screens/DiaryWriteScreen';
 import {DiaryDetailScreen} from './src/screens/DiaryDetailScreen';
 import {DailyHealthCheckScreen} from './src/screens/DailyHealthCheckScreen';
 import {RecentStatusTrendScreen} from './src/screens/RecentStatusTrendScreen';
+import {HealthConsultationScreen} from './src/screens/HealthConsultationScreen';
 import {hasToken, saveConnectedDeviceId} from './src/utils/storage';
 import {apiService} from './src/services/ApiService';
 
@@ -101,6 +102,7 @@ export type RootStackParamList = {
   DeviceManagement: {initialMode?: 'hubProvision' | 'ble1to1'} | undefined;
   DailyHealthCheck: {petCode?: string; petName?: string} | undefined;
   RecentStatusTrend: {petCode?: string; petName?: string} | undefined;
+  HealthConsultation: {petCode?: string; petName?: string} | undefined;
 };
 
 const Tab = createBottomTabNavigator<TabParamList>();
@@ -565,6 +567,7 @@ function App(): React.JSX.Element {
                     <Stack.Screen name="DeviceManagement" component={DeviceManagementScreen} />
                     <Stack.Screen name="DailyHealthCheck" component={DailyHealthCheckScreen} />
                     <Stack.Screen name="RecentStatusTrend" component={RecentStatusTrendScreen} />
+                    <Stack.Screen name="HealthConsultation" component={HealthConsultationScreen} />
                   </Stack.Navigator>
                 </NavigationContainer>
         <Toast />
