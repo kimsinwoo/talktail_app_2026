@@ -1,5 +1,5 @@
 import React, {useState, useEffect, useCallback, useMemo, ErrorInfo} from 'react';
-import {StatusBar, useColorScheme, AppState, View, Text, TouchableOpacity} from 'react-native';
+import {StatusBar, useColorScheme, AppState, View, Text, TouchableOpacity, DeviceEventEmitter} from 'react-native';
 import {SafeAreaProvider} from 'react-native-safe-area-context';
 import {NavigationContainer} from '@react-navigation/native';
 import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
@@ -43,6 +43,7 @@ import CheckoutScreen from './src/screens/CheckoutScreen';
 import OrderCompleteScreen from './src/screens/OrderCompleteScreen';
 import {HubConsoleScreen} from './src/screens/HubConsoleScreen';
 import {DeviceRegisterScreen} from './src/screens/DeviceRegisterScreen';
+import {HubDeviceManagementScreen} from './src/screens/HubDeviceManagementScreen';
 import {hasToken, saveConnectedDeviceId} from './src/utils/storage';
 import {apiService} from './src/services/ApiService';
 
@@ -183,6 +184,18 @@ function App(): React.JSX.Element {
     offLogoutSuccess();
     setIsLoggedIn(false);
   }, [logoutSuccess, offLogoutSuccess]);
+
+  // ✅ 401 인증 오류 발생 시 자동 로그아웃 및 로그인 화면으로 전환
+  useEffect(() => {
+    const subscription = DeviceEventEmitter.addListener('auth:logout', (data) => {
+      console.log('[App] 🔐 인증 오류로 인한 자동 로그아웃:', data);
+      setIsLoggedIn(false);
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, []);
 
   // 로그인 후 등록된 반려동물 목록 로드
   useEffect(() => {
@@ -540,6 +553,7 @@ function App(): React.JSX.Element {
                     <Stack.Screen name="PetEdit" component={PetEditScreen} />
                     <Stack.Screen name="HubConsole" component={HubConsoleScreen} />
                     <Stack.Screen name="DeviceRegister" component={DeviceRegisterScreen} />
+                    <Stack.Screen name="HubDeviceManagement" component={HubDeviceManagementScreen} />
                   </Stack.Navigator>
                 </NavigationContainer>
         <Toast />

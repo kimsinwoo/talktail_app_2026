@@ -54,9 +54,11 @@ export const hubStatusStore = create<HubStatusStore>((set, get) => ({
     const state = get();
     // ✅ 캐시가 유효하면 재요청하지 않음 (force가 true면 무시)
     if (!force && state.hubsLastFetched && Date.now() - state.hubsLastFetched < HUB_CACHE_DURATION) {
+      console.log('[hubStatusStore] refreshHubs 캐시 사용', {force, lastFetched: state.hubsLastFetched});
       return;
     }
 
+    console.log('[hubStatusStore] refreshHubs API 호출', {force});
     set({hubsLoading: true});
     try {
       const res = await apiService.get<{success: boolean; data: any[]}>('/hub');
@@ -66,12 +68,14 @@ export const hubStatusStore = create<HubStatusStore>((set, get) => ({
           name: String(h.name || h.address),
           updatedAt: typeof h.updatedAt === 'string' ? h.updatedAt : undefined,
         })) || [];
+      console.log('[hubStatusStore] refreshHubs API 응답', {count: list.length, hubs: list});
       set({hubs: list, hubsLoading: false, hubsLastFetched: Date.now()});
       
       // ✅ 허브 목록이 업데이트되면 각 허브의 상태를 주기적으로 확인
       if (list.length > 0) {
         list.forEach(h => {
-          hubSocketService.startHubPolling(h.address, {intervalMs: 30000, timeoutMs: 10000});
+          // ✅ 폴링 간격을 60초로 늘림 (TELEMETRY 수신 시 자동으로 상태 업데이트)
+          hubSocketService.startHubPolling(h.address, {intervalMs: 60000, timeoutMs: 10000});
         });
         
         // ✅ 허브 목록 업데이트 시 HubSocketService의 캐시된 연결된 디바이스 정보도 동기화

@@ -1,6 +1,8 @@
 import axios, {AxiosInstance, AxiosRequestConfig} from 'axios';
 import {getApiBaseUrl} from '../constants/api';
-import {getTokenString} from '../utils/storage';
+import {getTokenString, removeToken} from '../utils/storage';
+import {DeviceEventEmitter} from 'react-native';
+import Toast from 'react-native-toast-message';
 
 class ApiService {
   private api: AxiosInstance;
@@ -34,10 +36,29 @@ class ApiService {
     // 응답 인터셉터: 에러 처리
     this.api.interceptors.response.use(
       response => response,
-      error => {
+      async error => {
         if (error.response?.status === 401) {
           // 토큰 만료 등의 경우 처리
           console.error('인증 오류:', error);
+          
+          // ✅ 토큰 삭제
+          try {
+            await removeToken();
+            console.log('[ApiService] ✅ 토큰 삭제 완료');
+          } catch (tokenError) {
+            console.error('[ApiService] ❌ 토큰 삭제 실패:', tokenError);
+          }
+          
+          // ✅ Toast 메시지 표시
+          Toast.show({
+            type: 'error',
+            text1: '인증 오류',
+            text2: '토큰이 만료되었습니다. 다시 로그인해주세요.',
+            position: 'bottom',
+          });
+          
+          // ✅ 전역 이벤트 발생 (App.tsx에서 리스닝)
+          DeviceEventEmitter.emit('auth:logout', {reason: 'token_expired'});
         }
         return Promise.reject(error);
       },

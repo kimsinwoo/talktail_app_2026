@@ -405,7 +405,7 @@ class HubBLEService {
     }
   }
 
-  async scanForHubs(durationSeconds = 6, onFound?: (c: HubBleCandidate) => void) {
+  async scanForHubs(durationSeconds = 6, onFound?: (c: HubBleCandidate) => void): Promise<HubBleCandidate[]> {
     console.log('[HubBLEService] 🔍 scanForHubs start', {platform: Platform.OS, durationSeconds});
     // #region agent log
     fetch('http://127.0.0.1:7244/ingest/3eff9cd6-dca3-41a1-a9e7-4063579704a1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'HubBLEService.ts:407',message:'scanForHubs start',data:{platform:Platform.OS,durationSeconds},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H7'})}).catch(()=>{});
@@ -414,6 +414,7 @@ class HubBLEService {
     this.cleanupInternal();
 
     const seen = new Set<string>();
+    const candidates: HubBleCandidate[] = [];
 
     const subDiscover = BleManager.onDiscoverPeripheral((p: any) => {
       const id = String(p?.id || '');
@@ -455,47 +456,102 @@ class HubBLEService {
       if (seen.has(id)) return;
       seen.add(id);
       
+      const candidate: HubBleCandidate = {id, name, rssi};
+      candidates.push(candidate);
+      
       // #region agent log
       fetch('http://127.0.0.1:7244/ingest/3eff9cd6-dca3-41a1-a9e7-4063579704a1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'HubBLEService.ts:423',message:'hub discovered',data:{id,name,rssi,platform:Platform.OS},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H7'})}).catch(()=>{});
       // #endregion
       console.log('[HubBLEService] ✅ hub discovered', {id, name, rssi});
-      onFound?.({id, name, rssi});
+      onFound?.(candidate);
     });
 
-    const subStop = BleManager.onStopScan(() => {
-      console.log('[HubBLEService] 🛑 scan stopped');
-    });
-    this.subs.push(subDiscover, subStop);
-
-    // ✅ Android: RN 0.83 + ble-manager 12.x에서 TurboModule/HostFunction 시그니처가 "Map(options)" 형태인 빌드가 존재
-    const scanOptionsA = {serviceUUIDs: [], seconds: durationSeconds, allowDuplicates: false};
-    const scanOptionsB = {services: [], seconds: durationSeconds, allowDuplicates: false};
-
-      try {
-        await (BleManager as any).scan(scanOptionsA);
-        return;
-      } catch (e1) {
-        this.logError('BleManager.scan failed (android optionsA)', e1, scanOptionsA);
-      }
-      try {
-        await (BleManager as any).scan(scanOptionsB);
-        return;
-      } catch (e2) {
-        this.logError('BleManager.scan failed (android optionsB)', e2, scanOptionsB);
-      // 폴백: 기존 시그니처 시도
-      try {
-        // @ts-ignore
-        await (BleManager as any).scan(undefined, durationSeconds);
-      } catch {
-        try {
-          // @ts-ignore
-          await (BleManager as any).scan(undefined, durationSeconds, false);
-        } catch (e3) {
-          this.logError('BleManager.scan failed (android signatures)', e3, {durationSeconds});
-          throw e3;
+    return new Promise<HubBleCandidate[]>((resolve, reject) => {
+      let resolved = false;
+      let timeoutId: NodeJS.Timeout | null = null;
+      
+      const cleanup = () => {
+        if (resolved) return;
+        resolved = true;
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+          timeoutId = null;
         }
-      }
-    }
+        subDiscover.remove();
+        subStop.remove();
+      };
+
+      const subStop = BleManager.onStopScan(() => {
+        console.log('[HubBLEService] 🛑 scan stopped (onStopScan)', {foundCount: candidates.length});
+        cleanup();
+        resolve(candidates);
+      });
+      this.subs.push(subDiscover, subStop);
+
+      // ✅ 수동 타임아웃: durationSeconds 후 스캔 중지 및 Promise resolve
+      timeoutId = setTimeout(() => {
+        if (resolved) return;
+        console.log('[HubBLEService] 🛑 scan stopped (timeout)', {foundCount: candidates.length, durationSeconds});
+        try {
+          BleManager.stopScan().catch(() => {});
+        } catch (e) {
+          // ignore
+        }
+        cleanup();
+        resolve(candidates);
+      }, durationSeconds * 1000);
+
+      // ✅ Android: RN 0.83 + ble-manager 12.x에서 TurboModule/HostFunction 시그니처가 "Map(options)" 형태인 빌드가 존재
+      const scanOptionsA = {serviceUUIDs: [], seconds: durationSeconds, allowDuplicates: false};
+      const scanOptionsB = {services: [], seconds: durationSeconds, allowDuplicates: false};
+
+      // 스캔 시작 시도
+      (async () => {
+        try {
+          try {
+            await (BleManager as any).scan(scanOptionsA);
+            console.log('[HubBLEService] ✅ scan started (optionsA)', {durationSeconds});
+            // 스캔이 시작되었으므로 타임아웃이 resolve할 때까지 대기
+            return;
+          } catch (e1) {
+            this.logError('BleManager.scan failed (android optionsA)', e1, scanOptionsA);
+          }
+          try {
+            await (BleManager as any).scan(scanOptionsB);
+            console.log('[HubBLEService] ✅ scan started (optionsB)', {durationSeconds});
+            // 스캔이 시작되었으므로 타임아웃이 resolve할 때까지 대기
+            return;
+          } catch (e2) {
+            this.logError('BleManager.scan failed (android optionsB)', e2, scanOptionsB);
+          }
+          // 폴백: 기존 시그니처 시도
+          try {
+            // @ts-ignore
+            await (BleManager as any).scan(undefined, durationSeconds);
+            console.log('[HubBLEService] ✅ scan started (signature fallback 1)', {durationSeconds});
+            // 스캔이 시작되었으므로 타임아웃이 resolve할 때까지 대기
+            return;
+          } catch {
+            try {
+              // @ts-ignore
+              await (BleManager as any).scan(undefined, durationSeconds, false);
+              console.log('[HubBLEService] ✅ scan started (signature fallback 2)', {durationSeconds});
+              // 스캔이 시작되었으므로 타임아웃이 resolve할 때까지 대기
+              return;
+            } catch (e3) {
+              this.logError('BleManager.scan failed (android signatures)', e3, {durationSeconds});
+              clearTimeout(timeoutId);
+              cleanup();
+              reject(e3);
+            }
+          }
+        } catch (error) {
+          clearTimeout(timeoutId);
+          cleanup();
+          reject(error);
+        }
+      })();
+    });
   }
 
   async connect(peripheralId: string) {

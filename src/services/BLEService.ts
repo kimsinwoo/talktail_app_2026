@@ -1527,7 +1527,7 @@ class BLEService {
               : 0;
       
       // 🔍 진단 로그 (5개 값 수신 여부 확인용)
-      console.log('🔍 [진단] 원본 데이터:', {
+      console.log('🔍 [BLE 수신] 원본 데이터:', {
         type: originalType,
         length: originalLength,
         decodedLength,
@@ -1536,16 +1536,26 @@ class BLEService {
         hasCarriageReturn,
         hasSemicolon,
         preview: decodedValue.substring(0, 100),
+        fullValue: decodedValue, // ✅ 전체 값 출력
+        rawValue: value, // ✅ 원본 값 출력
       });
       
       // 5개 값 패턴 감지 (쉼표 4개 = 5개 값)
       if (commaCount === 4) {
-        console.log('✅✅✅ [진단] 5개 값 패턴 감지! (쉼표 4개)');
-        console.log('✅✅✅ [진단] 전체 값:', decodedValue);
-        console.log('✅✅✅ [진단] 값 분리:', decodedValue.split(','));
+        console.log('✅✅✅ [BLE 수신] 5개 값 패턴 감지! (쉼표 4개)');
+        console.log('✅✅✅ [BLE 수신] 전체 값:', decodedValue);
+        const values = decodedValue.split(',');
+        console.log('✅✅✅ [BLE 수신] 값 분리:', values);
+        console.log('✅✅✅ [BLE 수신] 파싱된 값:', {
+          value1: values[0]?.trim(),
+          value2: values[1]?.trim(),
+          value3: values[2]?.trim(),
+          value4: values[3]?.trim(),
+          value5: values[4]?.trim(),
+        });
       } else if (commaCount === 2) {
-        console.log('📊 [진단] 3개 값 패턴 (쉼표 2개) - 5개 값이 아님');
-        console.log('📊 [진단] 3개 값:', decodedValue.split(','));
+        console.log('📊 [BLE 수신] 3개 값 패턴 (쉼표 2개) - 5개 값이 아님');
+        console.log('📊 [BLE 수신] 3개 값:', decodedValue.split(','));
       } else {
         console.warn('⚠️ [진단] 예상치 못한 쉼표 개수:', commaCount, '전체 값:', decodedValue);
         console.warn('⚠️ [진단] 값 분리:', decodedValue.split(','));
@@ -1646,23 +1656,32 @@ class BLEService {
   
   // 🔍 파싱된 데이터 처리 메서드
   private processParsedData(parsedData: number[]) {
+    // ✅ BLE 수신 데이터 전체 로깅
+    console.log('📥 [BLE 수신] processParsedData 호출:', {
+      parsedData,
+      length: parsedData.length,
+      isSubscribed: this.isSubscribed,
+      deviceId: this.connectedDeviceId,
+      timestamp: new Date().toISOString(),
+    });
+    
     // ⚠️ 중요: 측정 중이 아닐 때는 데이터를 처리하지 않음
     if (!this.isSubscribed) {
       if (__DEV__) {
-        console.log('⚠️ [데이터 무시] 측정 중이 아니므로 데이터를 무시합니다. isSubscribed:', this.isSubscribed);
+        console.log('⚠️ [BLE 수신] 측정 중이 아니므로 데이터를 무시합니다. isSubscribed:', this.isSubscribed);
       }
       return;
     }
     
     // 파싱 결과 검증
     if (!Array.isArray(parsedData) || parsedData.length === 0) {
-      console.warn('⚠️ [파싱] 파싱된 데이터가 비어있음');
+      console.warn('⚠️ [BLE 수신] 파싱된 데이터가 비어있음');
       return;
     }
     
     // NaN이 포함되어 있으면 경고
     if (parsedData.some(v => isNaN(v))) {
-      console.error('❌ [파싱] NaN 발견!', {
+      console.error('❌ [BLE 수신] NaN 발견!', {
         parsedData,
         nanCount: parsedData.filter(v => isNaN(v)).length,
       });
@@ -1670,14 +1689,14 @@ class BLEService {
     }
 
     // 데이터 길이에 따른 분기 처리
-    // ⚠️ 최적화: 로그 최소화 (성능 개선)
-    if (__DEV__ && parsedData.length === 5) {
-      console.log('🔍 [데이터 분기] 5개 값 수신:', parsedData);
-    }
+    console.log('🔍 [BLE 수신] 데이터 분기 처리:', {
+      length: parsedData.length,
+      values: parsedData,
+    });
       
       // 5개 값이 먼저 확인되도록 (참고 코드처럼)
       if (parsedData.length === 5) {
-        // ⚠️ 최적화: 로그 최소화 (성능 개선)
+        console.log('✅ [BLE 수신] 5개 값 패턴 처리 시작:', parsedData);
         
         const metricsData = {
           samplingRate: parsedData[0],
@@ -1687,14 +1706,14 @@ class BLEService {
           battery: parsedData[4],
         };
         
+        console.log('✅ [BLE 수신] Metrics 데이터 생성:', metricsData);
+        
         // 데이터 유효성 검증 (범위 완화)
         const isValid = !isNaN(metricsData.hr) && !isNaN(metricsData.spo2) && 
                        !isNaN(metricsData.temp) && !isNaN(metricsData.battery);
         
         if (!isValid) {
-          if (__DEV__) {
-            console.warn('⚠️ [5개 값] NaN 포함:', metricsData);
-          }
+          console.warn('⚠️ [BLE 수신] NaN 포함:', metricsData);
           return;
         }
         
@@ -1771,17 +1790,18 @@ class BLEService {
         // UPDATE_DATAS는 이미 dispatch했으므로 콜백은 최소한만 호출
         if (this.callbacks.onDataReceived) {
           try {
-            // 로그 제거하여 성능 개선
-            this.callbacks.onDataReceived({
+            const callbackData = {
               hr: metricsData.hr,
               spo2: metricsData.spo2,
               temp: metricsData.temp,
               battery: metricsData.battery,
-            });
+            };
+            console.log('📤 [BLE 수신] onDataReceived 콜백 호출:', callbackData);
+            this.callbacks.onDataReceived(callbackData);
           } catch (callbackError) {
             // 에러는 조용히 처리 (로그 스팸 방지)
             if (__DEV__) {
-              console.error('❌ [5개 값] onDataReceived 콜백 에러:', callbackError);
+              console.error('❌ [BLE 수신] onDataReceived 콜백 에러:', callbackError);
             }
           }
         }
@@ -1885,19 +1905,35 @@ class BLEService {
       battery: number;
     },
   ) {
+    // ✅ BLE 수신 데이터 전체 로깅
+    console.log('📥 [BLE 수신] processDataWithMetrics:', {
+      collectedDataCount: collectedData.length,
+      metricsData: {
+        samplingRate: metricsData.samplingRate,
+        hr: metricsData.hr,
+        spo2: metricsData.spo2,
+        temp: metricsData.temp,
+        battery: metricsData.battery,
+      },
+      timestamp: new Date().toISOString(),
+      deviceId: this.connectedDeviceId,
+    });
+    
     // 데이터 콜백 호출
     if (this.callbacks.onDataReceived) {
       try {
-        this.callbacks.onDataReceived({
+        const callbackData = {
           hr: metricsData.hr,
           spo2: metricsData.spo2,
           temp: metricsData.temp,
           battery: metricsData.battery,
-        });
+        };
+        console.log('📤 [BLE 수신] processDataWithMetrics 콜백 호출:', callbackData);
+        this.callbacks.onDataReceived(callbackData);
       } catch (callbackError) {
         // 콜백 에러는 조용히 처리
         if (__DEV__) {
-          console.error('processDataWithMetrics callback error:', callbackError);
+          console.error('❌ [BLE 수신] processDataWithMetrics 콜백 에러:', callbackError);
         }
       }
     }

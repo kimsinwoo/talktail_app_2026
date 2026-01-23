@@ -20,8 +20,10 @@ class NotificationService {
   private lastDeviceDisconnectedNotification: number = 0;
   private lastDeviceConnectedNotification: number = 0;
   private heartRateHistory: number[] = [];
+  private lastAnyNotification: number = 0; // ✅ 모든 notification 통합 쿨다운
   private readonly NOTIFICATION_COOLDOWN = 60000; // 1분 쿨다운
   private readonly DEVICE_NOTIFICATION_COOLDOWN = 5000; // 5초 쿨다운 (연결/끊김 알림)
+  private readonly GLOBAL_NOTIFICATION_COOLDOWN = 60000; // ✅ 전역 notification 쿨다운 (1분)
 
   async initialize() {
     // 알림 채널 생성 (Android)
@@ -87,7 +89,21 @@ class NotificationService {
     notification: NotificationData,
     channelId: string = 'general',
     force: boolean = false,
+    bypassGlobalCooldown: boolean = false, // ✅ 전역 쿨다운 우회 옵션
   ) {
+    // ✅ 전역 notification 쿨다운 체크 (1분에 최대 한 번)
+    const now = Date.now();
+    if (!bypassGlobalCooldown && now - this.lastAnyNotification < this.GLOBAL_NOTIFICATION_COOLDOWN) {
+      const remainingTime = Math.ceil((this.GLOBAL_NOTIFICATION_COOLDOWN - (now - this.lastAnyNotification)) / 1000);
+      console.log(`[NotificationService] ⏸️ Notification skipped (global cooldown: ${remainingTime}s remaining)`, {
+        title: notification.title,
+        body: notification.body,
+        lastNotificationTime: new Date(this.lastAnyNotification).toISOString(),
+        remainingSeconds: remainingTime,
+      });
+      return;
+    }
+
     // force가 false이고 앱이 foreground에 있을 때는 notification을 띄우지 않음
     // (호출하는 쪽에서 이미 foreground/background를 구분했을 경우 force=true로 호출)
     if (!force && AppState.currentState === 'active') {
@@ -113,11 +129,16 @@ class NotificationService {
           badge: true,
         },
       });
+      
+      // ✅ 전역 쿨다운 타임스탬프 업데이트
+      this.lastAnyNotification = now;
+      
       console.log('[NotificationService] ✅ Notification displayed', {
         title: notification.title,
         body: notification.body,
         channelId,
         appState: AppState.currentState,
+        globalCooldownSet: true,
       });
     } catch (error) {
       console.error('[NotificationService] ❌ 알림 표시 실패:', error);

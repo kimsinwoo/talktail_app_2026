@@ -26,7 +26,7 @@ class HubSocketService {
   private hubProbeTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private hubProbeInFlight = new Map<
     string,
-    {startAt: number; timeoutMs: number; promise: Promise<boolean>}
+    {startAt: number; timeoutMs: number; promise: Promise<boolean>; resolve: (value: boolean) => void}
   >();
   private suppressStateHubUntil = new Map<string, number>(); // hubId -> ms (connect_devices 중 state:hub 억제)
 
@@ -108,15 +108,42 @@ class HubSocketService {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private emitToLocal(event: string, ...args: any[]) {
     const set = this.listeners.get(event);
-    if (!set || set.size === 0) return;
-    for (const cb of set) cb(...args);
+    console.log(`[HubSocketService] emitToLocal("${event}")`, {
+      event,
+      hasListeners: !!set,
+      listenerCount: set?.size || 0,
+      argsCount: args.length,
+      firstArgType: args.length > 0 ? typeof args[0] : 'none',
+    });
+    if (!set || set.size === 0) {
+      console.warn(`[HubSocketService] ⚠️ No listeners for event "${event}"`);
+      return;
+    }
+    console.log(`[HubSocketService] 📢 Calling ${set.size} listener(s) for "${event}"`);
+    for (const cb of set) {
+      try {
+        cb(...args);
+      } catch (error) {
+        console.error(`[HubSocketService] ❌ Listener error for "${event}":`, error);
+      }
+    }
+    console.log(`[HubSocketService] ✅ All listeners called for "${event}"`);
   }
 
   on(event: string, cb: Listener) {
     if (!this.listeners.has(event)) this.listeners.set(event, new Set());
     this.listeners.get(event)!.add(cb);
+    console.log(`[HubSocketService] ✅ Listener 등록: "${event}"`, {
+      event,
+      totalListeners: this.listeners.get(event)?.size || 0,
+      socketConnected: this.socket?.connected || false,
+    });
     return () => {
       this.listeners.get(event)?.delete(cb);
+      console.log(`[HubSocketService] ❌ Listener 해제: "${event}"`, {
+        event,
+        remainingListeners: this.listeners.get(event)?.size || 0,
+      });
     };
   }
 
@@ -242,17 +269,24 @@ class HubSocketService {
     });
     s.on('TELEMETRY', (payload: any) => {
       // ✅ 모든 수신 데이터를 콘솔에 출력
-      console.log(`[HubSocketService] 📥 Socket.IO Event: "TELEMETRY"`, {
-        event: 'TELEMETRY',
-        timestamp: new Date().toISOString(),
-        payload,
-        payloadType: typeof payload,
-        payloadString: JSON.stringify(payload, null, 2),
-      });
+      console.log('═══════════════════════════════════════════════════════');
+      console.log(`[HubSocketService] 📥 Socket.IO 원본 TELEMETRY 이벤트 수신`);
+      console.log('═══════════════════════════════════════════════════════');
+      console.log('이벤트:', 'TELEMETRY');
+      console.log('수신 시간:', new Date().toISOString());
+      console.log('전체 Payload:', JSON.stringify(payload, null, 2));
+      console.log('Payload 타입:', typeof payload);
+      console.log('로컬 리스너 수:', this.listeners.get('TELEMETRY')?.size || 0);
+      console.log('═══════════════════════════════════════════════════════');
+      
       this.debugLog('TELEMETRY', payload);
       const hubId = typeof payload?.hubId === 'string' ? payload.hubId : null;
       if (hubId) this.markHubActivity(hubId, 'TELEMETRY');
+      
+      // ✅ 로컬 리스너에게 전달
+      console.log('[HubSocketService] 📤 emitToLocal("TELEMETRY") 호출, 리스너 수:', this.listeners.get('TELEMETRY')?.size || 0);
       this.emitToLocal('TELEMETRY', payload);
+      console.log('[HubSocketService] ✅ emitToLocal("TELEMETRY") 완료');
     });
     s.on('CONNECTED_DEVICES', (payload: any) => {
       // ✅ 모든 수신 데이터를 콘솔에 출력
@@ -394,6 +428,7 @@ class HubSocketService {
 
   /**
    * 허브 활동 수신 시점 기록
+   * ✅ TELEMETRY나 CONNECTED_DEVICES를 받으면 즉시 허브 상태를 online으로 업데이트
    */
   private markHubActivity(hubId: string, source: 'TELEMETRY' | 'CONNECTED_DEVICES') {
     const now = Date.now();
@@ -402,12 +437,33 @@ class HubSocketService {
     this.suppressStateHubUntil.delete(hubId);
 
     const prev = this.hubStatus.get(hubId) || 'unknown';
+    // ✅ TELEMETRY나 CONNECTED_DEVICES를 받으면 즉시 online으로 업데이트 (빠른 상태 반영)
     if (prev !== 'online') {
       this.hubStatus.set(hubId, 'online');
       this.emitToLocal('HUB_STATUS', {hubId, status: 'online', source});
       this.emitToLocal('HUB_ONLINE', {hubId, source});
     } else {
+      // ✅ 이미 online이어도 활동 이벤트를 발생시켜서 상태 갱신 시간을 연장
       this.emitToLocal('HUB_ACTIVITY', {hubId, source, at: now});
+    }
+    
+    // ✅ 진행 중인 probe가 있으면 즉시 성공 처리 (불필요한 타임아웃 대기 방지)
+    const inflight = this.hubProbeInFlight.get(hubId);
+    if (inflight) {
+      const age = Date.now() - inflight.startAt;
+      if (age >= 0 && age < inflight.timeoutMs) {
+        // probe를 즉시 성공 처리
+        this.hubProbeInFlight.delete(hubId);
+        const timer = this.hubProbeTimers.get(hubId);
+        if (timer) {
+          clearTimeout(timer);
+          this.hubProbeTimers.delete(hubId);
+        }
+        // ✅ Promise를 즉시 resolve하여 타임아웃 대기 방지
+        if (inflight.resolve) {
+          inflight.resolve(true);
+        }
+      }
     }
   }
 
@@ -566,8 +622,17 @@ class HubSocketService {
       }
     }
 
+    // ✅ Promise resolve 함수를 외부에서 접근할 수 있도록 저장
+    let resolvePromise: ((value: boolean) => void) | null = null;
     const p = new Promise<boolean>(resolve => {
+      resolvePromise = resolve;
       const t = setTimeout(() => {
+        // ✅ 이미 inflight에서 삭제되었는지 확인
+        if (!this.hubProbeInFlight.has(hubId)) {
+          // 이미 markHubActivity에서 취소된 경우, true로 resolve
+          resolve(true);
+          return;
+        }
         const last = this.getLastHubActivityAt(hubId);
         const ok = typeof last === 'number' && last >= startAt;
         if (!ok && shouldStayOffline) {
@@ -585,12 +650,13 @@ class HubSocketService {
       }, timeoutMs);
       this.hubProbeTimers.set(hubId, t);
     });
-    this.hubProbeInFlight.set(hubId, {startAt, timeoutMs, promise: p});
+    this.hubProbeInFlight.set(hubId, {startAt, timeoutMs, promise: p, resolve: resolvePromise!});
     return await p;
   }
 
   /**
    * 주기적으로 state:hub를 보내 허브 온라인/오프라인을 갱신한다.
+   * ✅ TELEMETRY나 CONNECTED_DEVICES를 받으면 폴링 간격을 연장하여 불필요한 state:hub 전송 최소화
    */
   startHubPolling(hubId: string, opts?: {intervalMs?: number; timeoutMs?: number}) {
     const intervalMs = typeof opts?.intervalMs === 'number' ? opts!.intervalMs : 30000;
@@ -598,17 +664,47 @@ class HubSocketService {
     const timeoutMs = typeof opts?.timeoutMs === 'number' ? opts!.timeoutMs : 10000;
 
     this.stopHubPolling(hubId);
-    const t = setInterval(() => {
+    
+    // ✅ 동적 간격 조정: 최근 활동이 있으면 폴링 간격을 연장
+    const getDynamicInterval = () => {
+      const lastActivity = this.lastHubActivityAt.get(hubId);
+      if (lastActivity) {
+        const timeSinceActivity = Date.now() - lastActivity;
+        // 최근 30초 이내에 활동이 있으면 폴링 간격을 2배로 연장 (60초)
+        if (timeSinceActivity < 30000) {
+          return intervalMs * 2;
+        }
+      }
+      return intervalMs;
+    };
+    
+    const poll = () => {
+      const dynamicInterval = getDynamicInterval();
+      // ✅ 최근 활동이 있으면 폴링을 건너뛰고 다음 주기로 연기
+      const lastActivity = this.lastHubActivityAt.get(hubId);
+      if (lastActivity) {
+        const timeSinceActivity = Date.now() - lastActivity;
+        if (timeSinceActivity < 15000) {
+          // 최근 15초 이내에 활동이 있으면 이번 폴링 건너뛰기
+          return;
+        }
+      }
+      
       this.probeHub(hubId, {
         timeoutMs,
         reason: 'poll',
         silentIfOffline: true,
       }).catch(() => {});
-    }, intervalMs);
+    };
+    
+    const t = setInterval(poll, intervalMs);
     this.hubPollTimers.set(hubId, t);
 
-    // 즉시 한 번 수행
-    this.probeHub(hubId, {timeoutMs, reason: 'poll_init', silentIfOffline: true}).catch(() => {});
+    // 즉시 한 번 수행 (최근 활동이 없을 때만)
+    const lastActivity = this.lastHubActivityAt.get(hubId);
+    if (!lastActivity || Date.now() - lastActivity > 30000) {
+      this.probeHub(hubId, {timeoutMs, reason: 'poll_init', silentIfOffline: true}).catch(() => {});
+    }
 
     return () => this.stopHubPolling(hubId);
   }

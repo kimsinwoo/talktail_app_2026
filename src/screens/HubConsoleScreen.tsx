@@ -356,7 +356,8 @@ export function HubConsoleScreen() {
   // ✅ 주기적 state:hub 폴링 + offline 시 BLE fallback
   useEffect(() => {
     if (!selectedHub) return;
-    const stop = hubSocketService.startHubPolling(selectedHub, {intervalMs: 30000, timeoutMs: 10000});
+    // ✅ 폴링 간격을 60초로 통일 (hubStatusStore와 동일)
+    const stop = hubSocketService.startHubPolling(selectedHub, {intervalMs: 60000, timeoutMs: 10000});
 
     const offStatus = hubSocketService.on('HUB_STATUS', (p: any) => {
       const hubId = typeof p?.hubId === 'string' ? p.hubId : '';

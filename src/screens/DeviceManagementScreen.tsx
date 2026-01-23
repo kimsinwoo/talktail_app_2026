@@ -496,7 +496,8 @@ export function DeviceManagementScreen() {
   // ✅ 허브 목록이 바뀌면 각 허브를 주기적으로 state:hub 폴링(30초)
   useEffect(() => {
     if (!hubs || hubs.length === 0) return;
-    const stops = hubs.map(h => hubSocketService.startHubPolling(h.address, {intervalMs: 30000, timeoutMs: 10000}));
+    // ✅ 폴링 간격을 60초로 통일 (hubStatusStore와 동일)
+    const stops = hubs.map(h => hubSocketService.startHubPolling(h.address, {intervalMs: 60000, timeoutMs: 10000}));
     const offOffline = hubSocketService.on('HUB_OFFLINE', (p: any) => {
       const hubId = typeof p?.hubId === 'string' ? p.hubId : '';
       if (!hubId) return;

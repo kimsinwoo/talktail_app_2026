@@ -159,12 +159,12 @@ export function DeviceRegisterScreen() {
     const maxRetries = 2;
     
     try {
-      // ✅ POST 요청 시도
+      // ✅ POST 요청 시도 (hub_project/front와 동일한 payload 형식: { address, name, hubAddress })
       const res = await apiService.post<{
         success: boolean;
         message: string;
         data: {address: string; name: string; hub_address: string};
-      }>('/device', {address: mac, name: trimmed, hubAddress});
+      }>('/device', {address: mac, name: trimmed, hubAddress: hubAddress});
       
       // ✅ 응답 확인
       if ((res as any)?.success === true) {
@@ -210,9 +210,11 @@ export function DeviceRegisterScreen() {
   };
 
   const registerSelectedDevices = async () => {
-    const macs = Object.keys(selectedMacs).filter(m => !!selectedMacs[m]);
+    // ✅ 선택된 디바이스만 필터링 (명시적으로 true인 것만)
+    const macs = Object.keys(selectedMacs).filter(m => selectedMacs[m] === true);
+    
     if (macs.length === 0) {
-      Toast.show({type: 'info', text1: '등록할 디바이스를 선택해주세요.', position: 'bottom'});
+      Toast.show({type: 'info', text1: '등록할 디바이스를 선택해주세요.', text2: '체크박스를 선택한 후 등록 버튼을 눌러주세요.', position: 'bottom'});
       return;
     }
 
@@ -227,6 +229,12 @@ export function DeviceRegisterScreen() {
       // ✅ 순차적으로 처리하여 각 요청이 완료될 때까지 대기
       const results = [];
       for (const mac of macs) {
+        // ✅ 선택된 디바이스만 등록 (이중 체크)
+        if (selectedMacs[mac] !== true) {
+          console.log(`[DeviceRegisterScreen] ⚠️ 디바이스 ${mac}는 선택되지 않았습니다. 건너뜁니다.`);
+          continue;
+        }
+        
         const name = (registerDrafts[mac] || 'Tailing').trim() || 'Tailing';
         console.log(`[DeviceRegisterScreen] 디바이스 등록 시도: ${mac}, 이름: ${name}`);
         const r = await createOrUpdateDeviceInDb(mac, name);
@@ -238,16 +246,15 @@ export function DeviceRegisterScreen() {
       const failedOnes = results.filter(r => !r.ok);
       
       if (okOnes.length > 0) {
-        Toast.show({type: 'success', text1: '등록 완료', text2: `${okOnes.length}개`, position: 'bottom'});
+        Toast.show({type: 'success', text1: '등록 완료', text2: `${okOnes.length}개 디바이스가 등록되었습니다.`, position: 'bottom'});
         // ✅ 등록 완료 후 즉시 목록 새로고침
         await refreshHubDevices();
+        // ✅ 선택 상태 초기화
         setSelectedMacs({});
-        // ✅ 등록 완료 후 이전 화면으로 돌아가기 전에 다시 한 번 목록 새로고침
+        // ✅ 등록 완료 후 이전 화면으로 돌아가기 (약간의 지연을 두어 사용자가 성공 메시지를 볼 수 있도록)
         setTimeout(() => {
-          // ✅ 등록 완료 후 이전 화면으로 돌아가기
-          // 부모 화면(MyPageScreen)의 useFocusEffect가 목록을 자동으로 새로고침함
           navigation.goBack();
-        }, 800);
+        }, 1000);
       } else if (failedOnes.length > 0) {
         // ✅ 첫 번째 실패한 항목의 에러 메시지 표시
         const firstError = failedOnes[0]?.error || '서버/네트워크를 확인해주세요.';

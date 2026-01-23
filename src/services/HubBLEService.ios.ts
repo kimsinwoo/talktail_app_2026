@@ -168,7 +168,7 @@ class HubBLEServiceIOS {
 
   private scannedDevices = new Map<string, Device>();
 
-  async scanForHubs(durationSeconds = 6, onFound?: (c: HubBleCandidate) => void) {
+  async scanForHubs(durationSeconds = 6, onFound?: (c: HubBleCandidate) => void): Promise<HubBleCandidate[]> {
     console.log('[HubBLEService] 🔍 scanForHubs start (iOS)', {durationSeconds});
     
     try {
@@ -183,6 +183,7 @@ class HubBLEServiceIOS {
     console.log('[HubBLEService] ✅ manager obtained (iOS)');
     
     const seen = new Set<string>();
+    const candidates: HubBleCandidate[] = [];
     this.scannedDevices.clear();
 
     console.log('[HubBLEService] 🚀 startDeviceScan called (iOS)');
@@ -241,6 +242,9 @@ class HubBLEServiceIOS {
       // ✅ scan 중 발견한 device 객체 저장 (나중에 connect에 사용)
       this.scannedDevices.set(id, device);
 
+      const candidate: HubBleCandidate = {id, name: deviceName, rssi: device.rssi ?? undefined};
+      candidates.push(candidate);
+
       console.log('[HubBLEService] ✅ hub discovered', {
         id,
         name: deviceName,
@@ -248,14 +252,18 @@ class HubBLEServiceIOS {
         localName: device.localName,
         rssi: device.rssi,
       });
-      onFound?.({id, name: deviceName, rssi: device.rssi ?? undefined});
+      onFound?.(candidate);
     });
 
-    // durationSeconds 후 스캔 중지
-    setTimeout(() => {
-      manager.stopDeviceScan();
-      console.log('[HubBLEService] 🛑 scan stopped');
-    }, durationSeconds * 1000);
+    // Promise를 반환하여 스캔이 완료될 때까지 기다림
+    return new Promise<HubBleCandidate[]>((resolve) => {
+      // durationSeconds 후 스캔 중지 및 결과 반환
+      setTimeout(() => {
+        manager.stopDeviceScan();
+        console.log('[HubBLEService] 🛑 scan stopped', {foundCount: candidates.length});
+        resolve(candidates);
+      }, durationSeconds * 1000);
+    });
   }
 
   async connect(peripheralId: string) {
