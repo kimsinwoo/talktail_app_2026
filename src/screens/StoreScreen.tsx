@@ -23,6 +23,7 @@ import Toast from 'react-native-toast-message';
 import {useNavigation} from '@react-navigation/native';
 import {cartStore} from '../store/cartStore';
 import {ALL_PRODUCTS, Product} from '../constants/products';
+import {notificationService} from '../services/NotificationService';
 
 const allProducts: Product[] = ALL_PRODUCTS;
 

@@ -34,7 +34,7 @@ import {getToken} from '../utils/storage';
 import Toast from 'react-native-toast-message';
 import {Flame} from 'lucide-react-native';
 import {useNavigation} from '@react-navigation/native';
-import {ChevronRight, Plus, Wifi, Bluetooth} from 'lucide-react-native';
+import {ChevronRight, Plus, Wifi, Bluetooth, Eye} from 'lucide-react-native';
 
 interface MonitoringScreenProps {
   petId?: string;
@@ -310,9 +310,12 @@ export function MonitoringScreen({
   const hasHubs = globalHubs.length > 0;
   const hasDevices = pets.some(pet => pet.device_address);
   const isInitialState = !hasHubs && !hasDevices;
-  
+
+  // ✅ 대시보드 미리보기 모드
+  const [showDashboardPreview, setShowDashboardPreview] = useState(false);
+
   // ✅ 반려동물과 디바이스 매칭하여 데이터 준비
-  const petDeviceData = pets
+  let petDeviceData = pets
     .filter(pet => pet.device_address) // device_address가 있는 반려동물만
     .map(pet => {
       const deviceMac = pet.device_address!;
@@ -336,6 +339,70 @@ export function MonitoringScreen({
       };
     });
 
+  // ✅ 미리보기 모드일 때 더미 데이터 추가
+  if (showDashboardPreview && petDeviceData.length === 0) {
+    petDeviceData = [
+      {
+        pet: {
+          pet_code: 'demo-1',
+          name: '뽀삐',
+          device_address: 'd4:d5:3f:28:e1:f4',
+        } as Pet,
+        deviceMac: 'd4:d5:3f:28:e1:f4',
+        telemetry: {
+          type: 'sensor_data',
+          deviceId: 'd4:d5:3f:28:e1:f4',
+          data: {
+            hr: 120,
+            spo2: 98,
+            temp: 38.5,
+            battery: 85,
+            sampling_rate: 50,
+            timestamp: Date.now(),
+          },
+          _receivedAt: Date.now(),
+        },
+        deviceData: {
+          hr: 120,
+          spo2: 98,
+          temp: 38.5,
+          battery: 85,
+        },
+        connectionType: 'hub' as const,
+        receivedAt: Date.now(),
+      },
+      {
+        pet: {
+          pet_code: 'demo-2',
+          name: '치즈',
+          device_address: 'a1:b2:c3:d4:e5:f6',
+        } as Pet,
+        deviceMac: 'a1:b2:c3:d4:e5:f6',
+        telemetry: {
+          type: 'sensor_data',
+          deviceId: 'a1:b2:c3:d4:e5:f6',
+          data: {
+            hr: 95,
+            spo2: 97,
+            temp: 37.8,
+            battery: 72,
+            sampling_rate: 50,
+            timestamp: Date.now(),
+          },
+          _receivedAt: Date.now(),
+        },
+        deviceData: {
+          hr: 95,
+          spo2: 97,
+          temp: 37.8,
+          battery: 72,
+        },
+        connectionType: 'hub' as const,
+        receivedAt: Date.now(),
+      },
+    ];
+  }
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <ScrollView
@@ -347,7 +414,7 @@ export function MonitoringScreen({
         </View>
 
         {/* ✅ 초기 상태: 허브/디바이스 등록 안내 */}
-        {isInitialState ? (
+        {isInitialState && !showDashboardPreview ? (
           <View style={styles.section}>
             <View style={styles.initialStateCard}>
               <Text style={styles.initialStateTitle}>모니터링을 시작하세요</Text>
@@ -385,11 +452,35 @@ export function MonitoringScreen({
                     블루투스로 디바이스를 직접 연결하세요
                   </Text>
                 </TouchableOpacity>
+
+                {/* 대시보드 화면 미리보기 버튼 */}
+                <TouchableOpacity
+                  style={styles.previewButton}
+                  onPress={() => setShowDashboardPreview(true)}
+                  activeOpacity={0.85}>
+                  <Eye size={18} color="#f0663f" />
+                  <Text style={styles.previewButtonText}>모니터링 화면 미리보기</Text>
+                </TouchableOpacity>
               </View>
             </View>
           </View>
-        ) : (
+        ) : null}
+
+        {/* ✅ 대시보드 화면 (허브/디바이스 등록됨 또는 미리보기) */}
+        {(!isInitialState || showDashboardPreview) && (
           <>
+            {/* 미리보기 모드일 때 뒤로가기 버튼 */}
+            {showDashboardPreview && (
+              <View style={styles.section}>
+                <TouchableOpacity
+                  style={styles.backButton}
+                  onPress={() => setShowDashboardPreview(false)}
+                  activeOpacity={0.85}>
+                  <Text style={styles.backButtonText}>← 등록 화면으로 돌아가기</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
             {/* ✅ 허브 및 디바이스 상태 요약 */}
             <View style={styles.section}>
               <View style={styles.statusSummaryCard}>
@@ -399,14 +490,14 @@ export function MonitoringScreen({
                     <View style={styles.statusSummaryValueRow}>
                       <View style={[
                         styles.statusDot,
-                        {backgroundColor: hubOnlineCount > 0 ? '#2E8B7E' : '#F03F3F'}
+                        {backgroundColor: (showDashboardPreview ? 1 : hubOnlineCount) > 0 ? '#2E8B7E' : '#F03F3F'}
                       ]} />
                       <Text style={styles.statusSummaryValue}>
-                        {hubOnlineCount > 0 ? 'ON' : 'OFF'}
+                        {(showDashboardPreview ? 1 : hubOnlineCount) > 0 ? 'ON' : 'OFF'}
                       </Text>
                     </View>
                     <Text style={styles.statusSummarySubtext}>
-                      {hubOnlineCount}/{hubTotalCount}개 온라인
+                      {showDashboardPreview ? '1/1개 온라인' : `${hubOnlineCount}/${hubTotalCount}개 온라인`}
                     </Text>
                   </View>
                   
@@ -414,7 +505,9 @@ export function MonitoringScreen({
                   
                   <View style={styles.statusSummaryItem}>
                     <Text style={styles.statusSummaryLabel}>허브 연결 디바이스</Text>
-                    <Text style={styles.statusSummaryValue}>{hubConnectedDeviceCount}개</Text>
+                    <Text style={styles.statusSummaryValue}>
+                      {showDashboardPreview ? '2개' : `${hubConnectedDeviceCount}개`}
+                    </Text>
                     <Text style={styles.statusSummarySubtext}>허브를 통해 연결</Text>
                   </View>
                   
@@ -422,7 +515,9 @@ export function MonitoringScreen({
                   
                   <View style={styles.statusSummaryItem}>
                     <Text style={styles.statusSummaryLabel}>스마트폰 연결</Text>
-                    <Text style={styles.statusSummaryValue}>{bleConnectedDeviceCount}개</Text>
+                    <Text style={styles.statusSummaryValue}>
+                      {showDashboardPreview ? '0개' : `${bleConnectedDeviceCount}개`}
+                    </Text>
                     <Text style={styles.statusSummarySubtext}>직접 연결</Text>
                   </View>
                 </View>
@@ -1156,5 +1251,33 @@ const styles = StyleSheet.create({
     color: '#6B7280',
     fontWeight: '500',
     lineHeight: 18,
+  },
+  previewButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#f0663f',
+    backgroundColor: 'white',
+    marginTop: 8,
+  },
+  previewButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#f0663f',
+  },
+  backButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 12,
+  },
+  backButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#6B7280',
   },
 });
