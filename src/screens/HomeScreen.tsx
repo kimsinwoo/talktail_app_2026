@@ -9,7 +9,6 @@ import {
   ActivityIndicator,
   FlatList,
   Dimensions,
-  Image,
 } from 'react-native';
 import {
   Bell,
@@ -17,27 +16,25 @@ import {
   ChevronUp,
   ChevronDown,
   ChevronLeft,
-  Activity,
-  Sparkles,
-  ShoppingBag,
-  Image as ImageIcon,
-  Cloud,
-  Wind,
-  Droplets,
-  Award,
-  TrendingUp,
   Calendar,
-  Clock,
-  Thermometer,
-  Heart,
   BookOpen,
   PenLine,
+  CheckCircle2,
+  Circle,
+  Sparkles,
+  Cloud,
+  TrendingUp,
+  TrendingDown,
+  Minus,
+  AlertCircle,
+  Heart,
+  Image as ImageIcon,
+  Activity,
 } from 'lucide-react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
 import {useNavigation} from '@react-navigation/native';
 import type {Pet as RegisteredPet} from '../store/userStore';
-import {useBLE} from '../services/BLEContext';
 
 interface HomeScreenProps {
   pets: RegisteredPet[];
@@ -45,11 +42,9 @@ interface HomeScreenProps {
   selectedPetCode: string | null;
   userName: string;
   onSelectPet: (petCode: string) => void;
-  onNavigateToStore: (category?: string) => void;
 }
 
 const {width: SCREEN_WIDTH} = Dimensions.get('window');
-const PET_CARD_WIDTH = SCREEN_WIDTH - 32; // 좌우 패딩 제외
 
 export function HomeScreen({
   pets,
@@ -57,7 +52,6 @@ export function HomeScreen({
   selectedPetCode,
   userName,
   onSelectPet,
-  onNavigateToStore,
 }: HomeScreenProps) {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [currentPetIndex, setCurrentPetIndex] = useState(0);
@@ -65,7 +59,6 @@ export function HomeScreen({
   const navigation = useNavigation<any>();
   const petFlatListRef = useRef<FlatList>(null);
   const petDependentSectionRef = useRef<FlatList>(null);
-  const {state: bleState} = useBLE();
 
   // 더미데이터: 3마리 반려동물 추가 (실제 pets 배열이 3마리 미만일 경우)
   const displayPets = useMemo(() => {
@@ -114,8 +107,6 @@ export function HomeScreen({
       },
     ];
 
-    // 실제 pets가 있으면 사용, 없으면 더미데이터 사용
-    // 실제 pets가 3마리 미만이면 더미데이터로 보충
     if (pets.length === 0) {
       return dummyPets;
     }
@@ -129,7 +120,6 @@ export function HomeScreen({
   const currentPet = displayPets.find(p => p.pet_code === selectedPetCode) || displayPets[currentPetIndex] || null;
 
   useEffect(() => {
-    // selectedPetCode가 변경되면 해당 인덱스로 스크롤
     if (selectedPetCode) {
       const index = displayPets.findIndex(p => p.pet_code === selectedPetCode);
       if (index >= 0 && index !== currentPetIndex) {
@@ -157,7 +147,7 @@ export function HomeScreen({
     });
   };
 
-  // 반려동물 슬라이드 변경 핸들러 (히어로 영역)
+  // 반려동물 슬라이드 변경 핸들러
   const handlePetHeroScroll = (event: any) => {
     const offsetX = event.nativeEvent.contentOffset.x;
     const index = Math.round(offsetX / SCREEN_WIDTH);
@@ -166,13 +156,11 @@ export function HomeScreen({
       const pet = displayPets[index];
       if (pet) {
         onSelectPet(pet.pet_code);
-        // 반려동물 종속 섹션도 함께 스크롤
         petDependentSectionRef.current?.scrollToIndex({index, animated: true});
       }
     }
   };
 
-  // 반려동물 종속 섹션 슬라이드 변경 핸들러
   const handlePetDependentScroll = (event: any) => {
     const offsetX = event.nativeEvent.contentOffset.x;
     const index = Math.round(offsetX / SCREEN_WIDTH);
@@ -181,13 +169,11 @@ export function HomeScreen({
       const pet = displayPets[index];
       if (pet) {
         onSelectPet(pet.pet_code);
-        // 히어로 영역도 함께 스크롤
         petFlatListRef.current?.scrollToIndex({index, animated: true});
       }
     }
   };
 
-  // 슬라이드 네비게이션 핸들러
   const handleSlideLeft = () => {
     if (currentPetIndex > 0) {
       const newIndex = currentPetIndex - 1;
@@ -195,6 +181,10 @@ export function HomeScreen({
       const pet = displayPets[newIndex];
       if (pet) {
         onSelectPet(pet.pet_code);
+        // 상단 프로필 FlatList 스크롤 (offset 방식으로 더 안정적)
+        const offset = (SCREEN_WIDTH - 32) * newIndex;
+        petFlatListRef.current?.scrollToOffset({offset, animated: true});
+        // 하단 종속 섹션 FlatList 스크롤
         petDependentSectionRef.current?.scrollToIndex({index: newIndex, animated: true});
       }
     }
@@ -207,184 +197,101 @@ export function HomeScreen({
       const pet = displayPets[newIndex];
       if (pet) {
         onSelectPet(pet.pet_code);
+        // 상단 프로필 FlatList 스크롤 (offset 방식으로 더 안정적)
+        const offset = (SCREEN_WIDTH - 32) * newIndex;
+        petFlatListRef.current?.scrollToOffset({offset, animated: true});
+        // 하단 종속 섹션 FlatList 스크롤
         petDependentSectionRef.current?.scrollToIndex({index: newIndex, animated: true});
       }
     }
   };
 
-  // 날씨 정보 (모의 데이터 - 실제로는 API 연동)
+  // 날씨 정보 (모의 데이터)
   const weatherInfo = {
     condition: '맑음',
     airQuality: '좋음',
-    windSpeed: '약함',
-    summary: '오늘은 산책하기 무난한 날이에요',
-    minTemp: 5,
-    maxTemp: 12,
-    humidity: 45,
+    summary: '오늘은 산책하기 무난한 날씨예요',
     pm10: 25,
     pm25: 15,
   };
 
-  // 산책 추천 정보 (날씨 데이터 기반)
-  const walkRecommendation = useMemo(() => {
-    // 실제로는 날씨 데이터를 분석하여 추천 정보 생성
-    // 온도, 풍속, 미세먼지 등을 기반으로 추천 시간대와 주의사항 생성
-    const temp = (weatherInfo.minTemp + weatherInfo.maxTemp) / 2;
-    let recommendedTime = '오후 3시 ~ 5시';
-    let warning = '바람 다소 강함';
-    let clothing = '얇은 패딩 권장';
-
-    // 온도 기반 복장 추천
-    if (temp < 0) {
-      clothing = '두꺼운 패딩 필수';
-    } else if (temp < 5) {
-      clothing = '두꺼운 패딩 권장';
-    } else if (temp < 10) {
-      clothing = '얇은 패딩 권장';
-    } else if (temp < 15) {
-      clothing = '가벼운 겉옷 권장';
-    } else {
-      clothing = '가벼운 옷차림';
-    }
-
-    // 풍속 기반 주의사항
-    if (weatherInfo.windSpeed === '강함' || weatherInfo.windSpeed === '매우 강함') {
-      warning = '바람 매우 강함 - 산책 주의';
-    } else if (weatherInfo.windSpeed === '약함') {
-      warning = '바람 약함 - 산책하기 좋음';
-    }
-
-    // 미세먼지 기반 시간대 추천
-    if (weatherInfo.pm10 > 50 || weatherInfo.pm25 > 25) {
-      recommendedTime = '오전 6시 ~ 8시 (미세먼지 낮음)';
-    }
-
-    return {
-      recommendedTime,
-      warning,
-      clothing,
-    };
-  }, [weatherInfo.minTemp, weatherInfo.maxTemp, weatherInfo.windSpeed, weatherInfo.pm10, weatherInfo.pm25]);
-
-  // 포인트 정보 (모의 데이터)
-  const pointInfo = {
-    weeklyPoints: 1250,
-    recentWalkPoints: 180,
-    totalPoints: 5420,
-  };
-
-  // 더미데이터: 3마리 반려동물별 웨어러블, 피부 진단, 다이어리 데이터
+  // 반려동물별 데이터 (더미)
   const petDependentData = useMemo(() => {
-    // 실제로는 API에서 가져오지만, 지금은 더미데이터
-    const mockData: Record<string, {wearable: any; skin: any; diary: any}> = {};
+    const mockData: Record<string, {
+      statusSummary: {text: string; icon: 'up' | 'down' | 'minus' | 'alert'};
+      dailyCheck: {completed: boolean; completedAt?: string};
+      diary: {hasToday: boolean; lastDate?: string; preview?: string};
+      recentTrend: {message: string; days: number};
+    }> = {};
 
-    // displayPets 배열을 기반으로 더미데이터 생성
     displayPets.forEach((pet, index) => {
-      const wearTimes = ['6시간 30분', '4시간 15분', '8시간 20분'];
-      const activitySummaries = [
-        '활동량이 평소보다 높아요',
-        '오늘은 조용히 쉬고 있어요',
-        '활발하게 움직이고 있어요',
+      const statusSummaries = [
+        {text: '오늘 상태 체크가 아직 없어요', icon: 'alert' as const},
+        {text: '오늘은 무난한 하루였어요', icon: 'minus' as const},
+        {text: '최근 며칠간 컨디션이 조금 떨어졌어요', icon: 'down' as const},
       ];
-      const lastSyncs = ['2분 전', '15분 전', '1시간 전'];
-      const todayPoints = [80, 45, 120]; // 오늘 적립한 포인트
-      const diagnosisDates = ['2026.01.10', '2026.01.08', '2026.01.12'];
-      const daysSinceList = [6, 8, 4];
-      const statuses = ['양호', '주의', '양호'];
+      
+      const dailyChecks = [
+        {completed: false},
+        {completed: true, completedAt: '오전 9시'},
+        {completed: true, completedAt: '오후 2시'},
+      ];
 
-      // 다이어리 더미 데이터
-      const diaryTotalCounts = [12, 8, 15];
-      const diaryLastDates = ['2026.01.22', '2026.01.20', '2026.01.21'];
-      const diaryLastTitles = ['오늘도 산책 완료!', '비 오는 날', '새 간식 시식'];
+      const diaries = [
+        {hasToday: false, lastDate: '2026.01.21'},
+        {hasToday: true, lastDate: '2026.01.22', preview: '오늘도 산책 완료!'},
+        {hasToday: true, lastDate: '2026.01.22', preview: '새 간식 시식'},
+      ];
+
+      const recentTrends = [
+        {message: '최근 3일간 식사량이 평소보다 적은 날이 있어요', days: 3},
+        {message: '산책량이 줄어든 날이 자주 보여요', days: 5},
+        {message: '컨디션이 안정적으로 유지되고 있어요', days: 7},
+      ];
 
       mockData[pet.pet_code] = {
-        wearable: {
-          todayWearTime: wearTimes[index % 3] || wearTimes[0],
-          activitySummary: bleState.isConnected
-            ? activitySummaries[index % 3] || activitySummaries[0]
-            : '기기를 착용해주세요',
-          lastSync: lastSyncs[index % 3] || lastSyncs[0],
-          todayPoints: todayPoints[index % 3] || todayPoints[0],
-        },
-        skin: {
-          lastDiagnosisDate: diagnosisDates[index % 3] || diagnosisDates[0],
-          daysSince: daysSinceList[index % 3] || daysSinceList[0],
-          status: statuses[index % 3] || statuses[0],
-        },
-        diary: {
-          totalCount: diaryTotalCounts[index % 3] || diaryTotalCounts[0],
-          lastDate: diaryLastDates[index % 3] || diaryLastDates[0],
-          lastTitle: diaryLastTitles[index % 3] || diaryLastTitles[0],
-        },
+        statusSummary: statusSummaries[index % 3] || statusSummaries[0],
+        dailyCheck: dailyChecks[index % 3] || dailyChecks[0],
+        diary: diaries[index % 3] || diaries[0],
+        recentTrend: recentTrends[index % 3] || recentTrends[0],
       };
     });
 
     return mockData;
-  }, [displayPets, bleState.isConnected]);
+  }, [displayPets]);
 
-  // 현재 반려동물의 웨어러블 데이터
-  const wearableData = useMemo(() => {
+  // 현재 반려동물의 데이터
+  const currentPetData = useMemo(() => {
     if (!currentPet) {
       return {
-        todayWearTime: '--',
-        activitySummary: '반려동물을 선택해주세요',
-        lastSync: '--',
-        todayPoints: 0,
+        statusSummary: {text: '반려동물을 선택해주세요', icon: 'alert' as const},
+        dailyCheck: {completed: false},
+        diary: {hasToday: false},
+        recentTrend: {message: '', days: 0},
       };
     }
-    return petDependentData[currentPet.pet_code]?.wearable || {
-      todayWearTime: '--',
-      activitySummary: '데이터 없음',
-      lastSync: '--',
-      todayPoints: 0,
+    return petDependentData[currentPet.pet_code] || {
+      statusSummary: {text: '데이터 없음', icon: 'alert' as const},
+      dailyCheck: {completed: false},
+      diary: {hasToday: false},
+      recentTrend: {message: '', days: 0},
     };
   }, [currentPet, petDependentData]);
 
-  // 현재 반려동물의 피부 진단 데이터
-  const skinDiagnosisData = useMemo(() => {
-    if (!currentPet) {
-      return {
-        lastDiagnosisDate: '--',
-        daysSince: 0,
-        status: '--',
-      };
+  // 상태 아이콘 렌더링
+  const renderStatusIcon = (icon: 'up' | 'down' | 'minus' | 'alert') => {
+    switch (icon) {
+      case 'up':
+        return <TrendingUp size={16} color="#2E8B7E" />;
+      case 'down':
+        return <TrendingDown size={16} color="#F03F3F" />;
+      case 'minus':
+        return <Minus size={16} color="#9CA3AF" />;
+      case 'alert':
+        return <AlertCircle size={16} color="#FFB02E" />;
     }
-    return petDependentData[currentPet.pet_code]?.skin || {
-      lastDiagnosisDate: '--',
-      daysSince: 0,
-      status: '--',
-    };
-  }, [currentPet, petDependentData]);
-
-  // 쇼핑 카드 데이터 (사용자 전체 구매 이력 - 고정)
-  const shoppingData = {
-    lastOrderDate: '2026.01.12',
-    itemName: '관절건강 프리미엄 영양제',
-    reorderAvailable: true,
   };
 
-  // 이미지 생성 카드 데이터 (현재 반려동물 기준) - 반려동물 변경 시 업데이트
-  const imageGenData = useMemo(() => {
-    if (!currentPet) {
-      return {
-        lastGeneratedDate: '--',
-        thumbnail: null,
-        count: 0,
-      };
-    }
-    // 실제로는 currentPet.pet_code를 기반으로 API 호출
-    // 지금은 모의 데이터 (반려동물별로 다른 값)
-    const mockData: Record<string, any> = {
-      default: {
-        lastGeneratedDate: '2026.01.08',
-        thumbnail: null,
-        count: 3,
-      },
-    };
-    return mockData[currentPet.pet_code] || mockData.default;
-  }, [currentPet]);
-
-  // 반려동물이 없을 때 (로딩 중)
   if (petsLoading) {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
@@ -442,8 +349,264 @@ export function HomeScreen({
           </View>
         </View>
 
-        {/* 고정 카드: 날씨 정보 (헤더 바로 밑) */}
-        <View style={styles.weatherSection}>
+        {/* 반려동물 프로필 영역 (슬라이드 가능) */}
+        <View style={styles.petProfileSection}>
+          <FlatList
+            ref={petFlatListRef}
+            data={displayPets}
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            onMomentumScrollEnd={handlePetHeroScroll}
+            keyExtractor={item => item.pet_code}
+            scrollEnabled={true}
+            onScrollToIndexFailed={(info) => {
+              const wait = new Promise(resolve => setTimeout(resolve, 500));
+              wait.then(() => {
+                petFlatListRef.current?.scrollToIndex({ index: info.index, animated: true });
+              });
+            }}
+            renderItem={({item: pet}) => {
+              const petData = petDependentData[pet.pet_code];
+              const statusSummary = petData?.statusSummary || {
+                text: '데이터 없음',
+                icon: 'alert' as const,
+              };
+
+              return (
+                <View style={styles.petProfileCard}>
+                  <View style={styles.petProfileContent}>
+                    <View style={styles.petProfileAvatar}>
+                      <Text style={styles.petProfileAvatarText}>
+                        {(pet.name || 'P').slice(0, 1).toUpperCase()}
+                      </Text>
+                    </View>
+                    <View style={styles.petProfileDetails}>
+                      <Text style={styles.petProfileName}>{pet.name}</Text>
+                      <Text style={styles.petProfileSubtext}>
+                        {pet.breed || '품종'} · {pet.species || '반려동물'}
+                      </Text>
+                    </View>
+                  </View>
+                  {/* 상태 요약 */}
+                  <View style={styles.statusSummaryRow}>
+                    {renderStatusIcon(statusSummary.icon)}
+                    <Text style={styles.statusSummaryText}>{statusSummary.text}</Text>
+                  </View>
+                </View>
+              );
+            }}
+            getItemLayout={(data, index) => ({
+              length: SCREEN_WIDTH - 32,
+              offset: (SCREEN_WIDTH - 32) * index,
+              index,
+            })}
+            initialScrollIndex={
+              selectedPetCode
+                ? displayPets.findIndex(p => p.pet_code === selectedPetCode)
+                : 0
+            }
+          />
+          {/* 슬라이드 버튼 (FlatList 위에 오버레이) */}
+          {displayPets.length > 1 && (
+            <>
+              {currentPetIndex > 0 && (
+                <TouchableOpacity
+                  style={styles.slideButtonLeft}
+                  onPress={handleSlideLeft}
+                  activeOpacity={0.7}
+                  hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
+                  <ChevronLeft size={20} color="#f0663f" />
+                </TouchableOpacity>
+              )}
+              {currentPetIndex < displayPets.length - 1 && (
+                <TouchableOpacity
+                  style={styles.slideButtonRight}
+                  onPress={handleSlideRight}
+                  activeOpacity={0.7}
+                  hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
+                  <ChevronRight size={20} color="#f0663f" />
+                </TouchableOpacity>
+              )}
+            </>
+          )}
+          {/* 페이지 인디케이터 */}
+          {displayPets.length > 1 && (
+            <View style={styles.pageIndicator}>
+              {displayPets.map((_, index) => (
+                <View
+                  key={index}
+                  style={[
+                    styles.pageDot,
+                    index === currentPetIndex && styles.pageDotActive,
+                  ]}
+                />
+              ))}
+            </View>
+          )}
+        </View>
+
+        {/* 반려동물 종속 섹션 (슬라이드 가능) */}
+        <View style={styles.petDependentSection}>
+          <FlatList
+            ref={petDependentSectionRef}
+            data={displayPets}
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            onMomentumScrollEnd={handlePetDependentScroll}
+            keyExtractor={item => item.pet_code}
+            renderItem={({item: pet}) => {
+              const petData = petDependentData[pet.pet_code];
+              const dailyCheck = petData?.dailyCheck || {completed: false};
+              const diary = petData?.diary || {hasToday: false};
+              const recentTrend = petData?.recentTrend || {message: '', days: 0};
+
+              return (
+                <View style={styles.petDependentContainer}>
+                  {/* 핵심 카드 1: 데일리 건강 체크 */}
+                  <TouchableOpacity
+                    style={[
+                      styles.coreCard,
+                      !dailyCheck.completed && styles.coreCardHighlight,
+                    ]}
+                    activeOpacity={0.85}
+                    onPress={() => {
+                      navigateTo('DailyHealthCheck', {
+                        petCode: pet.pet_code,
+                        petName: pet.name,
+                      });
+                    }}>
+                    <View style={styles.coreCardHeader}>
+                      <View style={[
+                        styles.coreCardIcon,
+                        dailyCheck.completed
+                          ? {backgroundColor: '#E7F5F4'}
+                          : {backgroundColor: '#FFF4E6'},
+                      ]}>
+                        <Calendar size={20} color={dailyCheck.completed ? '#2E8B7E' : '#FFB02E'} />
+                      </View>
+                      <View style={styles.coreCardContent}>
+                        {dailyCheck.completed ? (
+                          <>
+                            <View style={styles.coreCardTitleRow}>
+                              <Text style={styles.coreCardTitle}>오늘 상태 체크 완료</Text>
+                              <View style={styles.checkBadge}>
+                                <CheckCircle2 size={14} color="#2E8B7E" />
+                              </View>
+                            </View>
+                            <Text style={styles.coreCardSubtitle}>
+                              오늘의 식사·산책·컨디션 기록이 남아있어요
+                            </Text>
+                            <Text style={styles.coreCardTime}>{dailyCheck.completedAt}</Text>
+                          </>
+                        ) : (
+                          <>
+                            <Text style={styles.coreCardTitle}>
+                              오늘 {pet.name}의 상태 체크가 아직 안 되었어요
+                            </Text>
+                            <Text style={styles.coreCardSubtitle}>
+                              하루 한 번의 기록이 변화를 만듭니다
+                            </Text>
+                          </>
+                        )}
+                      </View>
+                    </View>
+                    <View style={[
+                      styles.coreCardFooter,
+                      !dailyCheck.completed && styles.coreCardFooterHighlight,
+                    ]}>
+                      <Text style={[
+                        styles.coreCardButton,
+                        !dailyCheck.completed && styles.coreCardButtonHighlight,
+                      ]}>
+                        {dailyCheck.completed ? '오늘 기록 보기' : '오늘 상태 체크하기'}
+                      </Text>
+                      <ChevronRight
+                        size={18}
+                        color={dailyCheck.completed ? '#2E8B7E' : '#FFB02E'}
+                      />
+                    </View>
+                  </TouchableOpacity>
+
+                  {/* 핵심 카드 2: 다이어리 */}
+                  <TouchableOpacity
+                    style={styles.coreCard}
+                    activeOpacity={0.85}
+                    onPress={() => navigateTo('Diary', {petCode: pet.pet_code, petName: pet.name})}>
+                    <View style={styles.coreCardHeader}>
+                      <View style={[styles.coreCardIcon, {backgroundColor: '#EDE7F6'}]}>
+                        <BookOpen size={20} color="#7C4DFF" />
+                      </View>
+                      <View style={styles.coreCardContent}>
+                        {diary.hasToday ? (
+                          <>
+                            <Text style={styles.coreCardTitle}>오늘 이런 하루였어요</Text>
+                            <View style={styles.diaryPreviewContainer}>
+                              <Text style={styles.diaryPreviewText} numberOfLines={1}>
+                                {diary.preview || '일기 내용 미리보기'}
+                              </Text>
+                            </View>
+                          </>
+                        ) : (
+                          <>
+                            <Text style={styles.coreCardTitle}>
+                              오늘 {pet.name}의 하루를 기록해볼까요?
+                            </Text>
+                            <Text style={styles.coreCardSubtitle}>
+                              언제든 열려 있는 기록 공간이에요
+                            </Text>
+                          </>
+                        )}
+                      </View>
+                    </View>
+                    <View style={styles.coreCardFooter}>
+                      <Text style={[styles.coreCardButton, {color: '#7C4DFF'}]}>
+                        {diary.hasToday ? '기록 보기' : '일기 쓰기'}
+                      </Text>
+                      <ChevronRight size={18} color="#7C4DFF" />
+                    </View>
+                  </TouchableOpacity>
+
+                  {/* 핵심 카드 3: 최근 상태 흐름 요약 */}
+                  {recentTrend.message && (
+                    <TouchableOpacity
+                      style={styles.trendCard}
+                      activeOpacity={0.85}
+                      onPress={() => {
+                        navigateTo('RecentStatusTrend', {
+                          petCode: pet.pet_code,
+                          petName: pet.name,
+                        });
+                      }}>
+                      <View style={styles.trendCardHeader}>
+                        <View style={[styles.coreCardIcon, {backgroundColor: '#FFF4E6'}]}>
+                          <TrendingUp size={18} color="#FFB02E" />
+                        </View>
+                        <Text style={styles.trendCardTitle}>최근 상태 흐름</Text>
+                        <ChevronRight size={16} color="#FFB02E" />
+                      </View>
+                      <Text style={styles.trendCardMessage}>{recentTrend.message}</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              );
+            }}
+            getItemLayout={(data, index) => ({
+              length: SCREEN_WIDTH,
+              offset: SCREEN_WIDTH * index,
+              index,
+            })}
+            initialScrollIndex={
+              selectedPetCode
+                ? displayPets.findIndex(p => p.pet_code === selectedPetCode)
+                : 0
+            }
+          />
+        </View>
+
+        {/* 보조 카드: 날씨 & 산책 정보 */}
+        <View style={styles.section}>
           <TouchableOpacity
             style={styles.weatherCard}
             activeOpacity={0.8}
@@ -461,271 +624,53 @@ export function HomeScreen({
             </View>
             {isWeatherExpanded && (
               <View style={styles.weatherExpandedContent}>
-                {/* 날씨 정보 표 */}
-                <View style={styles.weatherTable}>
-                  <View style={styles.weatherTableRow}>
-                    <View style={styles.weatherTableCell}>
-                      <Text style={styles.weatherTableLabel}>온도</Text>
-                    </View>
-                    <View style={styles.weatherTableCell}>
-                      <Text style={styles.weatherTableValue}>
-                        {weatherInfo.minTemp}° / {weatherInfo.maxTemp}°
-                      </Text>
-                    </View>
-                  </View>
-                  <View style={styles.weatherTableRow}>
-                    <View style={styles.weatherTableCell}>
-                      <Text style={styles.weatherTableLabel}>습도</Text>
-                    </View>
-                    <View style={styles.weatherTableCell}>
-                      <Text style={styles.weatherTableValue}>{weatherInfo.humidity}%</Text>
-                    </View>
-                  </View>
-                  <View style={styles.weatherTableRow}>
-                    <View style={styles.weatherTableCell}>
-                      <Text style={styles.weatherTableLabel}>풍속</Text>
-                    </View>
-                    <View style={styles.weatherTableCell}>
-                      <Text style={styles.weatherTableValue}>{weatherInfo.windSpeed}</Text>
-                    </View>
-                  </View>
-                  <View style={styles.weatherTableRow}>
-                    <View style={styles.weatherTableCell}>
-                      <Text style={styles.weatherTableLabel}>미세먼지</Text>
-                    </View>
-                    <View style={styles.weatherTableCell}>
-                      <Text style={styles.weatherTableValue}>
-                        PM10: {weatherInfo.pm10} / PM2.5: {weatherInfo.pm25}
-                      </Text>
-                    </View>
-                  </View>
-                </View>
-
-                {/* 산책 추천 정보 */}
-                <View style={styles.walkRecommendationSection}>
-                  <Text style={styles.walkRecommendationTitle}>오늘 산책, 이렇게 하세요</Text>
-                  <View style={styles.walkRecommendationList}>
-                    <View style={styles.walkRecommendationItem}>
-                      <View style={[styles.walkRecommendationDot, {backgroundColor: '#2E8B7E'}]} />
-                      <Text style={styles.walkRecommendationText}>
-                        <Text style={styles.walkRecommendationLabel}>추천: </Text>
-                        {walkRecommendation.recommendedTime}
-                      </Text>
-                    </View>
-                    <View style={styles.walkRecommendationItem}>
-                      <View style={[styles.walkRecommendationDot, {backgroundColor: '#FFB02E'}]} />
-                      <Text style={styles.walkRecommendationText}>
-                        <Text style={styles.walkRecommendationLabel}>주의: </Text>
-                        {walkRecommendation.warning}
-                      </Text>
-                    </View>
-                    <View style={styles.walkRecommendationItem}>
-                      <View style={[styles.walkRecommendationDot, {backgroundColor: '#9B87F5'}]} />
-                      <Text style={styles.walkRecommendationText}>
-                        <Text style={styles.walkRecommendationLabel}>복장: </Text>
-                        {walkRecommendation.clothing}
-                      </Text>
-                    </View>
-                  </View>
+                <View style={styles.weatherDetailRow}>
+                  <Text style={styles.weatherDetailLabel}>미세먼지</Text>
+                  <Text style={styles.weatherDetailValue}>
+                    PM10: {weatherInfo.pm10} / PM2.5: {weatherInfo.pm25}
+                  </Text>
                 </View>
               </View>
             )}
           </TouchableOpacity>
-        </View>
 
-        {/* 반려동물 종속 섹션 (슬라이드 가능) */}
-        <View style={styles.petDependentSection}>
-          {/* 좌우 화살표 네비게이션 */}
-          {displayPets.length > 1 && (
-            <>
-              {currentPetIndex > 0 && (
-                <TouchableOpacity
-                  style={styles.slideButtonLeft}
-                  onPress={handleSlideLeft}
-                  activeOpacity={0.7}>
-                  <ChevronLeft size={20} color="#f0663f" />
-                </TouchableOpacity>
-              )}
-              {currentPetIndex < displayPets.length - 1 && (
-                <TouchableOpacity
-                  style={styles.slideButtonRight}
-                  onPress={handleSlideRight}
-                  activeOpacity={0.7}>
-                  <ChevronRight size={20} color="#f0663f" />
-                </TouchableOpacity>
-              )}
-            </>
-          )}
-
-          <FlatList
-            ref={petDependentSectionRef}
-            data={displayPets}
-            horizontal
-            pagingEnabled
-            showsHorizontalScrollIndicator={false}
-            onMomentumScrollEnd={handlePetDependentScroll}
-            keyExtractor={item => item.pet_code}
-            renderItem={({item: pet}) => {
-              const petData = petDependentData[pet.pet_code];
-              const wearable = petData?.wearable || {
-                todayWearTime: '--',
-                activitySummary: '데이터 없음',
-                lastSync: '--',
-              };
-              const skin = petData?.skin || {
-                lastDiagnosisDate: '--',
-                daysSince: 0,
-                status: '--',
-              };
-              const diary = petData?.diary || {
-                totalCount: 0,
-                lastDate: '--',
-                lastTitle: '아직 작성된 일기가 없어요',
-              };
-
-              return (
-                <View style={styles.petDependentContainer}>
-                  {/* 반려동물 정보 카드 */}
-                  <View style={styles.petInfoCard}>
-                    <View style={styles.petInfoContent}>
-                      <View style={styles.petInfoAvatar}>
-                        <Text style={styles.petInfoAvatarText}>
-                          {(pet.name || 'P').slice(0, 1).toUpperCase()}
-                        </Text>
-                      </View>
-                      <View style={styles.petInfoDetails}>
-                        <Text style={styles.petInfoName}>{pet.name}</Text>
-                        <Text style={styles.petInfoSubtext}>
-                          {pet.breed || '품종'} · {pet.species || '반려동물'}
-                        </Text>
-                      </View>
-                    </View>
-                  </View>
-
-                  {/* 웨어러블 모니터링 카드 */}
-                  <TouchableOpacity
-                    style={styles.serviceCard}
-                    activeOpacity={0.85}
-                    onPress={() => {
-                      // 하단 탭 네비게이터의 Monitoring 탭으로 이동
-                      // Tab Navigator 안에 있는 Screen에서는 navigate를 직접 사용
-                      (navigation as any).navigate('Monitoring');
-                    }}>
-                    <View style={styles.serviceCardHeader}>
-                      <View style={[styles.serviceIcon, {backgroundColor: '#E7F5F4'}]}>
-                        <Activity size={20} color="#2E8B7E" />
-                      </View>
-                      <View style={styles.serviceCardHeaderText}>
-                        <Text style={styles.serviceCardTitle}>웨어러블 모니터링</Text>
-                        <Text style={styles.serviceCardSubtitle}>{wearable.activitySummary}</Text>
-                        <Text style={styles.serviceCardPoints}>
-                          오늘 적립한 포인트 : {wearable.todayPoints || 0}p
-                        </Text>
-                      </View>
-                      <ChevronRight size={20} color="#CCCCCC" />
-                    </View>
-                  </TouchableOpacity>
-
-                  {/* 다이어리 쓰기 카드 */}
-                  <TouchableOpacity
-                    style={styles.serviceCard}
-                    activeOpacity={0.85}
-                    onPress={() => navigateTo('Diary', {petCode: pet.pet_code, petName: pet.name})}>
-                    <View style={styles.serviceCardHeader}>
-                      <View style={[styles.serviceIcon, {backgroundColor: '#EDE7F6'}]}>
-                        <BookOpen size={20} color="#7C4DFF" />
-                      </View>
-                      <View style={styles.serviceCardHeaderText}>
-                        <Text style={styles.serviceCardTitle}>다이어리</Text>
-                        <Text style={styles.serviceCardSubtitle} numberOfLines={1}>
-                          {diary.lastTitle}
-                        </Text>
-                        <Text style={styles.serviceCardDiaryStats}>
-                          총 {diary.totalCount}개의 일기
-                        </Text>
-                      </View>
-                      <ChevronRight size={20} color="#CCCCCC" />
-                    </View>
-                  </TouchableOpacity>
-
-                  {/* 피부 진단 카드 */}
-                  <TouchableOpacity
-                    style={styles.serviceCard}
-                    activeOpacity={0.85}
-                    onPress={() => navigateTo('HealthCheckStart')}>
-                    <View style={styles.serviceCardHeader}>
-                      <View style={[styles.serviceIcon, {backgroundColor: '#FEF0EB'}]}>
-                        <Sparkles size={20} color="#f0663f" />
-                      </View>
-                      <View style={styles.serviceCardHeaderText}>
-                        <Text style={styles.serviceCardTitle}>피부 진단</Text>
-                        <Text style={styles.serviceCardSubtitle}>
-                          진단 후 {skin.daysSince}일 경과 · 상태 {skin.status}
-                        </Text>
-                      </View>
-                      <ChevronRight size={20} color="#CCCCCC" />
-                    </View>
-                  </TouchableOpacity>
-                </View>
-              );
-            }}
-            getItemLayout={(data, index) => ({
-              length: SCREEN_WIDTH,
-              offset: SCREEN_WIDTH * index,
-              index,
-            })}
-            initialScrollIndex={
-              selectedPetCode
-                ? displayPets.findIndex(p => p.pet_code === selectedPetCode)
-                : 0
-            }
-          />
-          {/* 페이지 인디케이터 */}
-          {displayPets.length > 1 && (
-            <View style={styles.pageIndicator}>
-              {displayPets.map((_, index) => (
-                <View
-                  key={index}
-                  style={[
-                    styles.pageDot,
-                    index === currentPetIndex && styles.pageDotActive,
-                  ]}
-                />
-              ))}
-            </View>
-          )}
-        </View>
-
-        {/* 고정 서비스 카드 섹션 */}
-        <View style={styles.section}>
-          {/* 쇼핑 카드 */}
+          {/* 웨어러블 디바이스 카드 */}
           <TouchableOpacity
             style={styles.serviceCard}
             activeOpacity={0.85}
             onPress={() => {
-              // 하단 탭 네비게이터의 Store 탭으로 이동
-              // Tab Navigator 안에 있는 Screen에서는 navigate를 직접 사용
-              (navigation as any).navigate('Store');
+              (navigation as any).navigate('Monitoring');
             }}>
             <View style={styles.serviceCardHeader}>
-              <View style={[styles.serviceIcon, {backgroundColor: '#FFF4E6'}]}>
-                <ShoppingBag size={22} color="#FFB02E" />
+              <View style={[styles.serviceCardIcon, {backgroundColor: '#E7F5F4'}]}>
+                <Activity size={20} color="#2E8B7E" />
               </View>
-              <View style={styles.serviceCardHeaderText}>
-                <Text style={styles.serviceCardTitle}>톡테일 스토어</Text>
+              <View style={styles.serviceCardContent}>
+                <Text style={styles.serviceCardTitle}>웨어러블 모니터링</Text>
                 <Text style={styles.serviceCardSubtitle}>
-                  최근 구매: {shoppingData.lastOrderDate}
+                  실시간으로 반려동물의 건강 상태를 확인해보세요
                 </Text>
               </View>
-              <ChevronRight size={20} color="#CCCCCC" />
+              <ChevronRight size={18} color="#2E8B7E" />
             </View>
-            <View style={styles.serviceCardBody}>
-              <Text style={styles.serviceCardText}>
-                {shoppingData.itemName}
-              </Text>
-              {shoppingData.reorderAvailable && (
-                <Text style={styles.serviceCardFooter}>재구매 가능</Text>
-              )}
+          </TouchableOpacity>
+
+          {/* 피부 진단 카드 */}
+          <TouchableOpacity
+            style={styles.serviceCard}
+            activeOpacity={0.85}
+            onPress={() => navigateTo('HealthCheckStart')}>
+            <View style={styles.serviceCardHeader}>
+              <View style={[styles.serviceCardIcon, {backgroundColor: '#FEF0EB'}]}>
+                <Sparkles size={20} color="#f0663f" />
+              </View>
+              <View style={styles.serviceCardContent}>
+                <Text style={styles.serviceCardTitle}>피부 진단</Text>
+                <Text style={styles.serviceCardSubtitle}>
+                  AI로 반려동물의 피부 상태를 확인해보세요
+                </Text>
+              </View>
+              <ChevronRight size={18} color="#f0663f" />
             </View>
           </TouchableOpacity>
 
@@ -734,49 +679,26 @@ export function HomeScreen({
             style={styles.serviceCard}
             activeOpacity={0.85}
             onPress={() => {
-              Toast.show({type: 'info', text1: '이미지 생성 서비스는 준비중입니다', position: 'bottom'});
+              Toast.show({
+                type: 'info',
+                text1: '이미지 생성 서비스는 준비중입니다',
+                position: 'bottom',
+              });
             }}>
             <View style={styles.serviceCardHeader}>
-              <View style={[styles.serviceIcon, {backgroundColor: '#F3F0FF'}]}>
-                <ImageIcon size={22} color="#9B87F5" />
+              <View style={[styles.serviceCardIcon, {backgroundColor: '#F3F0FF'}]}>
+                <ImageIcon size={20} color="#9B87F5" />
               </View>
-              <View style={styles.serviceCardHeaderText}>
+              <View style={styles.serviceCardContent}>
                 <Text style={styles.serviceCardTitle}>이미지 생성</Text>
                 <Text style={styles.serviceCardSubtitle}>
-                  마지막 생성: {imageGenData.lastGeneratedDate}
+                  반려동물의 특별한 순간을 이미지로 만들어보세요
                 </Text>
               </View>
-              <ChevronRight size={20} color="#CCCCCC" />
-            </View>
-            <View style={styles.serviceCardBody}>
-              <Text style={styles.serviceCardText}>
-                총 {imageGenData.count}개의 이미지가 생성되었어요
-              </Text>
+              <ChevronRight size={18} color="#9B87F5" />
             </View>
           </TouchableOpacity>
         </View>
-
-        {/* 건강 진단 카드 */}
-        <View style={styles.section}>
-          <TouchableOpacity
-            style={styles.healthCheckCard}
-            activeOpacity={0.85}
-            onPress={() => navigateTo('HealthCheckStart')}>
-            <View style={styles.healthCheckCardContent}>
-              <View style={styles.healthCheckIconContainer}>
-                <Heart size={24} color="#f0663f" />
-              </View>
-              <View style={styles.healthCheckTextContainer}>
-                <Text style={styles.healthCheckTitle}>우리아이 맞춤 건강 진단 받아보기</Text>
-                <Text style={styles.healthCheckSubtitle}>
-                  수의사가 직접 분석하는 무료 건강체크
-                </Text>
-              </View>
-              <ChevronRight size={20} color="#CCCCCC" />
-            </View>
-          </TouchableOpacity>
-        </View>
-
       </ScrollView>
     </SafeAreaView>
   );
@@ -854,10 +776,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   headerTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#111111',
-    letterSpacing: -0.3,
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#1A202C',
+    letterSpacing: -0.4,
   },
   notificationButton: {
     position: 'relative',
@@ -872,208 +794,125 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     backgroundColor: '#F03F3F',
   },
-  // 날씨 섹션
-  weatherSection: {
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 8,
-  },
-  weatherCard: {
-    backgroundColor: 'white',
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#f0f0f0',
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 1},
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 1,
-  },
-  weatherCardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  weatherHeaderLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    flex: 1,
-  },
-  weatherSummary: {
-    fontSize: 14,
-    color: '#2E8B7E',
-    fontWeight: '600',
-    flex: 1,
-  },
-  weatherExpandedContent: {
-    marginTop: 16,
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
-    gap: 16,
-  },
-  // 날씨 정보 표
-  weatherTable: {
-    gap: 0,
-  },
-  weatherTableRow: {
-    flexDirection: 'row',
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-  },
-  weatherTableCell: {
-    flex: 1,
-  },
-  weatherTableLabel: {
-    fontSize: 12,
-    color: '#888888',
-    fontWeight: '500',
-  },
-  weatherTableValue: {
-    fontSize: 13,
-    color: '#111111',
-    fontWeight: '600',
-    textAlign: 'right',
-  },
-  // 산책 추천 섹션
-  walkRecommendationSection: {
-    marginTop: 4,
-  },
-  walkRecommendationTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#111111',
-    marginBottom: 10,
-  },
-  walkRecommendationList: {
-    gap: 8,
-  },
-  walkRecommendationItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  walkRecommendationDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  walkRecommendationText: {
-    fontSize: 13,
-    color: '#111111',
-    fontWeight: '500',
-    flex: 1,
-  },
-  walkRecommendationLabel: {
-    fontWeight: '600',
-  },
-  // 반려동물 종속 섹션
-  petDependentSection: {
+  // 반려동물 프로필 섹션
+  petProfileSection: {
     marginTop: 20,
     marginBottom: 8,
     position: 'relative',
-    backgroundColor: '#F5F7FA',
-    borderRadius: 16,
-    paddingTop: 16,
-    paddingBottom: 16,
-    borderWidth: 1,
-    borderColor: '#E8ECF0',
-    marginHorizontal: 16,
-  },
-  petDependentContainer: {
-    width: SCREEN_WIDTH - 32, // 섹션의 marginHorizontal(16*2) 제외
     paddingHorizontal: 16,
-    gap: 12,
+    overflow: 'visible',
   },
-  slideButtonLeft: {
-    position: 'absolute',
-    left: 8,
-    top: '50%',
-    transform: [{translateY: -20}],
-    zIndex: 10,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 2},
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    elevation: 4,
-    borderWidth: 1,
-    borderColor: '#f0f0f0',
-  },
-  slideButtonRight: {
-    position: 'absolute',
-    right: 8,
-    top: '50%',
-    transform: [{translateY: -20}],
-    zIndex: 10,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 2},
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    elevation: 4,
-    borderWidth: 1,
-    borderColor: '#f0f0f0',
-  },
-  petInfoCard: {
+  petProfileCard: {
+    width: SCREEN_WIDTH - 32,
     backgroundColor: 'white',
-    borderRadius: 18,
+    borderRadius: 16,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#f0f0f0',
+    borderColor: '#E8ECF0',
     shadowColor: '#000',
     shadowOffset: {width: 0, height: 2},
-    shadowOpacity: 0.05,
-    shadowRadius: 6,
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
     elevation: 2,
   },
-  petInfoContent: {
+  petProfileContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
+    gap: 12,
+    marginBottom: 12,
   },
-  petInfoAvatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+  petProfileAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     backgroundColor: '#E7F5F4',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2,
     borderColor: '#D8EFED',
+    shadowColor: '#2E8B7E',
+    shadowOffset: {width: 0, height: 1},
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
+    elevation: 1,
   },
-  petInfoAvatarText: {
-    fontSize: 20,
+  petProfileAvatarText: {
+    fontSize: 18,
     fontWeight: '900',
     color: '#2E8B7E',
+    letterSpacing: -0.3,
   },
-  petInfoDetails: {
+  petProfileDetails: {
     flex: 1,
   },
-  petInfoName: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#111111',
+  petProfileName: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#1A202C',
     letterSpacing: -0.3,
     marginBottom: 3,
   },
-  petInfoSubtext: {
+  petProfileSubtext: {
     fontSize: 13,
-    color: '#666666',
+    color: '#718096',
     fontWeight: '500',
+    letterSpacing: -0.2,
+  },
+  statusSummaryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingTop: 12,
+    paddingHorizontal: 2,
+    borderTopWidth: 1,
+    borderTopColor: '#F0F4F8',
+  },
+  statusSummaryText: {
+    fontSize: 14,
+    color: '#4A5568',
+    fontWeight: '600',
+    flex: 1,
+    lineHeight: 18,
+  },
+  slideButtonLeft: {
+    position: 'absolute',
+    left: 4,
+    top: '50%',
+    transform: [{translateY: -20}],
+    zIndex: 100,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255, 255, 255, 0.98)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 2},
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 8,
+    borderWidth: 1,
+    borderColor: '#E8ECF0',
+  },
+  slideButtonRight: {
+    position: 'absolute',
+    right: 4,
+    top: '50%',
+    transform: [{translateY: -20}],
+    zIndex: 100,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255, 255, 255, 0.98)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 2},
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 8,
+    borderWidth: 1,
+    borderColor: '#E8ECF0',
   },
   pageIndicator: {
     flexDirection: 'row',
@@ -1092,202 +931,260 @@ const styles = StyleSheet.create({
     width: 20,
     backgroundColor: '#f0663f',
   },
+  // 반려동물 종속 섹션
+  petDependentSection: {
+    marginTop: 20,
+    marginBottom: 8,
+    position: 'relative',
+  },
+  petDependentContainer: {
+    width: SCREEN_WIDTH,
+    paddingHorizontal: 16,
+    gap: 10,
+  },
+  // 핵심 카드
+  coreCard: {
+    backgroundColor: 'white',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E8ECF0',
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 2},
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  coreCardHighlight: {
+    borderColor: '#FFE5D9',
+    backgroundColor: '#FFFBF8',
+    borderWidth: 1.5,
+  },
+  coreCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    marginBottom: 14,
+  },
+  coreCardIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 1},
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  coreCardContent: {
+    flex: 1,
+  },
+  coreCardTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 6,
+  },
+  coreCardTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1A202C',
+    lineHeight: 22,
+    letterSpacing: -0.3,
+  },
+  checkBadge: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#E7F5F4',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  coreCardSubtitle: {
+    fontSize: 13,
+    color: '#718096',
+    fontWeight: '500',
+    lineHeight: 18,
+    letterSpacing: -0.2,
+  },
+  coreCardTime: {
+    fontSize: 12,
+    color: '#2E8B7E',
+    fontWeight: '600',
+    marginTop: 4,
+  },
+  coreCardFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#F0F4F8',
+  },
+  coreCardFooterHighlight: {
+    borderTopColor: '#FFE5D9',
+  },
+  coreCardButton: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#2E8B7E',
+    letterSpacing: -0.2,
+  },
+  coreCardButtonHighlight: {
+    color: '#FFB02E',
+  },
+  diaryPreviewContainer: {
+    marginTop: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: '#F5F3FF',
+    borderRadius: 10,
+    borderLeftWidth: 3,
+    borderLeftColor: '#7C4DFF',
+  },
+  diaryPreviewText: {
+    fontSize: 13,
+    color: '#5B21B6',
+    fontWeight: '500',
+    lineHeight: 18,
+  },
+  // 트렌드 카드
+  trendCard: {
+    backgroundColor: '#FFF9F0',
+    borderRadius: 18,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: '#FFE5D9',
+    shadowColor: '#FFB02E',
+    shadowOffset: {width: 0, height: 2},
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  trendCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 12,
+  },
+  trendCardTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1A202C',
+    letterSpacing: -0.3,
+  },
+  trendCardMessage: {
+    fontSize: 14,
+    color: '#4A5568',
+    fontWeight: '500',
+    lineHeight: 20,
+    letterSpacing: -0.2,
+  },
   // 섹션
   section: {
     paddingHorizontal: 16,
     marginTop: 20,
   },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
+  // 날씨 카드
+  weatherCard: {
+    backgroundColor: 'white',
+    borderRadius: 18,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: '#E8ECF0',
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 2},
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  weatherCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  weatherHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+  },
+  weatherSummary: {
+    fontSize: 15,
+    color: '#2E8B7E',
+    fontWeight: '600',
+    flex: 1,
+    letterSpacing: -0.2,
+  },
+  weatherExpandedContent: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
+  },
+  weatherDetailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  weatherDetailLabel: {
+    fontSize: 12,
+    color: '#888888',
+    fontWeight: '500',
+  },
+  weatherDetailValue: {
+    fontSize: 13,
     color: '#111111',
-    letterSpacing: -0.3,
-    marginBottom: 12,
+    fontWeight: '600',
   },
   // 서비스 카드
   serviceCard: {
     backgroundColor: 'white',
     borderRadius: 18,
-    padding: 16,
+    padding: 18,
     borderWidth: 1,
-    borderColor: '#f0f0f0',
+    borderColor: '#E8ECF0',
     shadowColor: '#000',
     shadowOffset: {width: 0, height: 2},
-    shadowOpacity: 0.05,
-    shadowRadius: 6,
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
     elevation: 2,
+    marginTop: 12,
   },
   serviceCardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 14,
   },
-  serviceIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 13,
+  serviceCardIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 2},
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
-  serviceCardHeaderText: {
+  serviceCardContent: {
     flex: 1,
   },
   serviceCardTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#111111',
+    color: '#1A202C',
     marginBottom: 4,
+    letterSpacing: -0.3,
   },
   serviceCardSubtitle: {
     fontSize: 13,
-    color: '#888888',
+    color: '#718096',
     fontWeight: '500',
-    marginBottom: 2,
-  },
-  serviceCardPoints: {
-    fontSize: 13,
-    color: '#FFB02E',
-    fontWeight: '600',
-    marginTop: 2,
-  },
-  serviceCardDiaryStats: {
-    fontSize: 13,
-    color: '#7C4DFF',
-    fontWeight: '600',
-    marginTop: 2,
-  },
-  serviceCardBody: {
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
-  },
-  serviceCardMetric: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 8,
-  },
-  serviceCardMetricText: {
-    fontSize: 14,
-    color: '#111111',
-    fontWeight: '600',
-  },
-  serviceCardText: {
-    fontSize: 14,
-    color: '#666666',
-    fontWeight: '500',
-    lineHeight: 20,
-  },
-  serviceCardBadge: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#FEF0EB',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-  },
-  serviceCardBadgeText: {
-    fontSize: 12,
-    color: '#f0663f',
-    fontWeight: '600',
-  },
-  serviceCardFooter: {
-    fontSize: 12,
-    color: '#888888',
-    fontWeight: '500',
-    marginTop: 4,
-  },
-  // 건강 진단 카드
-  healthCheckCard: {
-    backgroundColor: '#FEF0EB',
-    borderRadius: 18,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: '#FFE5D9',
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 2},
-    shadowOpacity: 0.05,
-    shadowRadius: 6,
-    elevation: 2,
-  },
-  healthCheckCardContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-  },
-  healthCheckIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: 'white',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  healthCheckTextContainer: {
-    flex: 1,
-  },
-  healthCheckTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#f0663f',
-    marginBottom: 4,
-  },
-  healthCheckSubtitle: {
-    fontSize: 13,
-    color: '#888888',
-    fontWeight: '500',
-  },
-  // 포인트 카드
-  pointCard: {
-    backgroundColor: 'white',
-    borderRadius: 20,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: '#f0f0f0',
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 2},
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  pointCardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 16,
-  },
-  pointCardTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#111111',
-  },
-  pointCardBody: {
-    gap: 12,
-    marginBottom: 12,
-  },
-  pointCardRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  pointCardLabel: {
-    fontSize: 14,
-    color: '#666666',
-    fontWeight: '500',
-  },
-  pointCardValueRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  pointCardValue: {
-    fontSize: 16,
-    color: '#FFB02E',
-    fontWeight: '700',
-  },
-  pointCardFooter: {
-    fontSize: 12,
-    color: '#888888',
-    fontWeight: '500',
-    textAlign: 'right',
+    lineHeight: 18,
+    letterSpacing: -0.2,
   },
 });

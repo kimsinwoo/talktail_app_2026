@@ -1,3 +1,4 @@
+// 스토어 기능 임시 비활성화 - 나중에 사용 예정
 import React, {useState} from 'react';
 import {
   View,

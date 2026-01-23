@@ -27,7 +27,7 @@ import {userStore} from '../store/userStore';
 import {useNavigation} from '@react-navigation/native';
 
 interface MyPageScreenProps {
-  onAddToCart?: (productId: number) => void;
+  // onAddToCart?: (productId: number) => void; // 스토어 기능 임시 비활성화
 }
 
 const menuItems = [
@@ -47,30 +47,31 @@ const menuItems = [
     color: '#2E8B7E',
     bgColor: '#E7F5F4',
   },
-  {
-    id: 'orders',
-    icon: Package,
-    title: '주문 내역',
-    subtitle: '구매한 상품 확인',
-    color: '#2E8B7E',
-    bgColor: '#E7F5F4',
-  },
-  {
-    id: 'favorites',
-    icon: Heart,
-    title: '찜한 상품',
-    subtitle: '관심 상품 모아보기',
-    color: '#F03F3F',
-    bgColor: '#FFE8E8',
-  },
-  {
-    id: 'payment',
-    icon: CreditCard,
-    title: '결제 수단',
-    subtitle: '카드 및 결제 관리',
-    color: '#FFB02E',
-    bgColor: '#FFF4E6',
-  },
+  // 스토어 기능 임시 비활성화
+  // {
+  //   id: 'orders',
+  //   icon: Package,
+  //   title: '주문 내역',
+  //   subtitle: '구매한 상품 확인',
+  //   color: '#2E8B7E',
+  //   bgColor: '#E7F5F4',
+  // },
+  // {
+  //   id: 'favorites',
+  //   icon: Heart,
+  //   title: '찜한 상품',
+  //   subtitle: '관심 상품 모아보기',
+  //   color: '#F03F3F',
+  //   bgColor: '#FFE8E8',
+  // },
+  // {
+  //   id: 'payment',
+  //   icon: CreditCard,
+  //   title: '결제 수단',
+  //   subtitle: '카드 및 결제 관리',
+  //   color: '#FFB02E',
+  //   bgColor: '#FFF4E6',
+  // },
   {
     id: 'notifications',
     icon: Bell,
@@ -89,7 +90,7 @@ const menuItems = [
   },
 ];
 
-export function MyPageScreen({onAddToCart}: MyPageScreenProps) {
+export function MyPageScreen(/* {onAddToCart}: MyPageScreenProps */) {
   const navigation = useNavigation();
   const [refreshing, setRefreshing] = useState(false);
 
@@ -155,15 +156,16 @@ export function MyPageScreen({onAddToCart}: MyPageScreenProps) {
       case 'pets':
         (navigation as any).navigate('PetManagement');
         break;
-      case 'orders':
-        (navigation as any).navigate('OrderHistory');
-        break;
-      case 'favorites':
-        (navigation as any).navigate('Favorites');
-        break;
-      case 'payment':
-        (navigation as any).navigate('PaymentMethods');
-        break;
+      // 스토어 기능 임시 비활성화
+      // case 'orders':
+      //   (navigation as any).navigate('OrderHistory');
+      //   break;
+      // case 'favorites':
+      //   (navigation as any).navigate('Favorites');
+      //   break;
+      // case 'payment':
+      //   (navigation as any).navigate('PaymentMethods');
+      //   break;
       case 'notifications':
         (navigation as any).navigate('NotificationSettings');
         break;

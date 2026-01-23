@@ -5,20 +5,20 @@ import {NavigationContainer} from '@react-navigation/native';
 import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
 import {createNativeStackNavigator} from '@react-navigation/native-stack';
 import Toast from 'react-native-toast-message';
-import {Home, Activity, ShoppingBag, Settings, User} from 'lucide-react-native';
+import {Home, Activity, /* ShoppingBag, */ Settings, User} from 'lucide-react-native';
 import {BLEProvider} from './src/services/BLEContext';
 import {bleService} from './src/services/BLEService';
 import {notificationService} from './src/services/NotificationService';
 import {backendNotificationService} from './src/services/BackendNotificationService';
 import {hubSocketService} from './src/services/HubSocketService';
-import {cartStore} from './src/store/cartStore';
+// import {cartStore} from './src/store/cartStore';
 import {userStore} from './src/store/userStore';
 import {orgStore} from './src/store/orgStore';
 
 import {HomeScreen} from './src/screens/HomeScreen';
 import {MonitoringScreen} from './src/screens/MonitoringScreen';
 import {MonitoringDetailScreen} from './src/screens/MonitoringDetailScreen';
-import {StoreScreen} from './src/screens/StoreScreen';
+// import {StoreScreen} from './src/screens/StoreScreen';
 import {DeviceManagementScreen} from './src/screens/DeviceManagementScreen';
 import {MyPageScreen} from './src/screens/MyPageScreen';
 import {LoginScreen} from './src/screens/LoginScreen';
@@ -30,8 +30,8 @@ import OrderHistoryScreen from './src/screens/OrderHistoryScreen';
 import PaymentMethodsScreen from './src/screens/PaymentMethodsScreen';
 import ProfileSettingsScreen from './src/screens/ProfileSettingsScreen';
 import NotificationSettingsScreen from './src/screens/NotificationSettingsScreen';
-import CartScreen from './src/screens/CartScreen';
-import ProductDetailScreen from './src/screens/ProductDetailScreen';
+// import CartScreen from './src/screens/CartScreen';
+// import ProductDetailScreen from './src/screens/ProductDetailScreen';
 import AppSettingsScreen from './src/screens/AppSettingsScreen';
 import HospitalFinderScreen from './src/screens/HospitalFinderScreen';
 import WalkHistoryScreen from './src/screens/WalkHistoryScreen';
@@ -41,20 +41,22 @@ import PetRegisterScreen from './src/screens/PetRegisterScreen';
 import {PetManagementScreen} from './src/screens/PetManagementScreen';
 import PetEditScreen from './src/screens/PetEditScreen';
 import HealthCheckStartScreen from './src/screens/HealthCheckStartScreen';
-import CheckoutScreen from './src/screens/CheckoutScreen';
-import OrderCompleteScreen from './src/screens/OrderCompleteScreen';
+// import CheckoutScreen from './src/screens/CheckoutScreen';
+// import OrderCompleteScreen from './src/screens/OrderCompleteScreen';
 import {HubConsoleScreen} from './src/screens/HubConsoleScreen';
 import {DeviceRegisterScreen} from './src/screens/DeviceRegisterScreen';
 import {DiaryScreen} from './src/screens/DiaryScreen';
 import {DiaryWriteScreen} from './src/screens/DiaryWriteScreen';
 import {DiaryDetailScreen} from './src/screens/DiaryDetailScreen';
+import {DailyHealthCheckScreen} from './src/screens/DailyHealthCheckScreen';
+import {RecentStatusTrendScreen} from './src/screens/RecentStatusTrendScreen';
 import {hasToken, saveConnectedDeviceId} from './src/utils/storage';
 import {apiService} from './src/services/ApiService';
 
 export type TabParamList = {
   Home: undefined;
   Monitoring: {petId?: string; petName?: string; petImage?: string} | undefined;
-  Store: {category?: string} | undefined;
+  // Store: {category?: string} | undefined; // 스토어 기능 임시 비활성화
   MyPage: undefined;
 };
 
@@ -66,10 +68,10 @@ export type RootStackParamList = {
   PaymentMethods: undefined;
   ProfileSettings: undefined;
   NotificationSettings: undefined;
-  Cart: undefined;
-  Checkout: undefined;
-  OrderComplete: {orderId?: string} | undefined;
-  ProductDetail: {productId: number};
+  // Cart: undefined; // 스토어 기능 임시 비활성화
+  // Checkout: undefined; // 스토어 기능 임시 비활성화
+  // OrderComplete: {orderId?: string} | undefined; // 스토어 기능 임시 비활성화
+  // ProductDetail: {productId: number}; // 스토어 기능 임시 비활성화
   AppSettings: undefined;
   HospitalFinder: undefined;
   WalkHistory: undefined;
@@ -97,6 +99,8 @@ export type RootStackParamList = {
   DiaryDetail: {diary: any} | undefined;
   MonitoringDetail: {petCode: string; deviceMac: string; petName?: string} | undefined;
   DeviceManagement: {initialMode?: 'hubProvision' | 'ble1to1'} | undefined;
+  DailyHealthCheck: {petCode?: string; petName?: string} | undefined;
+  RecentStatusTrend: {petCode?: string; petName?: string} | undefined;
 };
 
 const Tab = createBottomTabNavigator<TabParamList>();
@@ -154,9 +158,9 @@ class ErrorBoundary extends React.Component<
 
 function App(): React.JSX.Element {
   const isDarkMode = useColorScheme() === 'dark';
-  const [storeCategory, setStoreCategory] = useState<string | undefined>(
-    undefined,
-  );
+  // const [storeCategory, setStoreCategory] = useState<string | undefined>(
+  //   undefined,
+  // ); // 스토어 기능 임시 비활성화
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
   const [isCheckingLogin, setIsCheckingLogin] = useState<boolean>(true);
   const [appError, setAppError] = useState<Error | null>(null);
@@ -331,9 +335,9 @@ function App(): React.JSX.Element {
   }, []);
 
   // useCallback으로 함수 메모이제이션하여 불필요한 리렌더링 방지
-  const handleAddToCart = useCallback((productId: number) => {
-            cartStore.getState().add(productId);
-  }, []);
+  // const handleAddToCart = useCallback((productId: number) => {
+  //           cartStore.getState().add(productId);
+  // }, []); // 스토어 기능 임시 비활성화
 
   const handleSelectPet = useCallback(
     (petCode: string) => {
@@ -342,9 +346,9 @@ function App(): React.JSX.Element {
     [setSelectedPetCode],
   );
 
-  const handleNavigateToStore = useCallback((category?: string) => {
-    setStoreCategory(category);
-  }, []);
+  // const handleNavigateToStore = useCallback((category?: string) => {
+  //   setStoreCategory(category);
+  // }, []); // 스토어 기능 임시 비활성화
 
   // 로그인 성공 핸들러 (현재 사용 안 함, 로그인 체크 비활성화)
   // const handleLoginSuccess = useCallback(async () => {
@@ -444,7 +448,7 @@ function App(): React.JSX.Element {
                                 selectedPetCode={selectedPetCode}
                                 userName="반려인"
                                 onSelectPet={handleSelectPet}
-                                onNavigateToStore={handleNavigateToStore}
+                                // onNavigateToStore={handleNavigateToStore} // 스토어 기능 임시 비활성화
                               />
                             )}
                           </Tab.Screen>
@@ -494,6 +498,7 @@ function App(): React.JSX.Element {
                               return <MonitoringScreen {...props} {...petProps} />;
                             }}
                           </Tab.Screen>
+                          {/* 스토어 기능 임시 비활성화
                           <Tab.Screen
                             name="Store"
                             options={{
@@ -510,6 +515,7 @@ function App(): React.JSX.Element {
                               />
                             )}
                           </Tab.Screen>
+                          */}
                           <Tab.Screen
                             name="MyPage"
                             options={{
@@ -519,7 +525,7 @@ function App(): React.JSX.Element {
                               ),
                             }}>
                             {props => (
-                              <MyPageScreen {...props} onAddToCart={handleAddToCart} />
+                              <MyPageScreen {...props} /* onAddToCart={handleAddToCart} */ />
                             )}
                           </Tab.Screen>
                         </Tab.Navigator>
@@ -535,10 +541,12 @@ function App(): React.JSX.Element {
                       name="NotificationSettings"
                       component={NotificationSettingsScreen}
                     />
+                    {/* 스토어 기능 임시 비활성화
                     <Stack.Screen name="Cart" component={CartScreen} />
                     <Stack.Screen name="Checkout" component={CheckoutScreen} />
                     <Stack.Screen name="OrderComplete" component={OrderCompleteScreen} />
                     <Stack.Screen name="ProductDetail" component={ProductDetailScreen} />
+                    */}
                     <Stack.Screen name="AppSettings" component={AppSettingsScreen} />
                     <Stack.Screen name="HospitalFinder" component={HospitalFinderScreen} />
                     <Stack.Screen name="WalkHistory" component={WalkHistoryScreen} />
@@ -555,6 +563,8 @@ function App(): React.JSX.Element {
                     <Stack.Screen name="DiaryDetail" component={DiaryDetailScreen} />
                     <Stack.Screen name="MonitoringDetail" component={MonitoringDetailScreen} />
                     <Stack.Screen name="DeviceManagement" component={DeviceManagementScreen} />
+                    <Stack.Screen name="DailyHealthCheck" component={DailyHealthCheckScreen} />
+                    <Stack.Screen name="RecentStatusTrend" component={RecentStatusTrendScreen} />
                   </Stack.Navigator>
                 </NavigationContainer>
         <Toast />

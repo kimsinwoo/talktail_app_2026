@@ -1,3 +1,4 @@
+// 스토어 기능 임시 비활성화 - 나중에 사용 예정
 import React from 'react';
 import {SafeAreaView, StyleSheet, Text, View, TouchableOpacity} from 'react-native';
 import {CheckCircle, ShoppingBag} from 'lucide-react-native';
