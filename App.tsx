@@ -17,6 +17,7 @@ import {orgStore} from './src/store/orgStore';
 
 import {HomeScreen} from './src/screens/HomeScreen';
 import {MonitoringScreen} from './src/screens/MonitoringScreen';
+import {MonitoringDetailScreen} from './src/screens/MonitoringDetailScreen';
 import {StoreScreen} from './src/screens/StoreScreen';
 import {DeviceManagementScreen} from './src/screens/DeviceManagementScreen';
 import {MyPageScreen} from './src/screens/MyPageScreen';
@@ -94,6 +95,8 @@ export type RootStackParamList = {
   Diary: {petCode?: string; petName?: string} | undefined;
   DiaryWrite: {petCode?: string; petName?: string} | undefined;
   DiaryDetail: {diary: any} | undefined;
+  MonitoringDetail: {petCode: string; deviceMac: string; petName?: string} | undefined;
+  DeviceManagement: {initialMode?: 'hubProvision' | 'ble1to1'} | undefined;
 };
 
 const Tab = createBottomTabNavigator<TabParamList>();
@@ -550,6 +553,8 @@ function App(): React.JSX.Element {
                     <Stack.Screen name="Diary" component={DiaryScreen} />
                     <Stack.Screen name="DiaryWrite" component={DiaryWriteScreen} />
                     <Stack.Screen name="DiaryDetail" component={DiaryDetailScreen} />
+                    <Stack.Screen name="MonitoringDetail" component={MonitoringDetailScreen} />
+                    <Stack.Screen name="DeviceManagement" component={DeviceManagementScreen} />
                   </Stack.Navigator>
                 </NavigationContainer>
         <Toast />

@@ -18,7 +18,7 @@ import {
 import BleManager, {
 } from 'react-native-ble-manager';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import {useFocusEffect, useNavigation} from '@react-navigation/native';
+import {useFocusEffect, useNavigation, useRoute, RouteProp} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import Toast from 'react-native-toast-message';
 import {Bluetooth, CheckCircle2, ChevronRight, Link2, Plus, Wifi} from 'lucide-react-native';
@@ -72,8 +72,10 @@ function extractHubIdFromMqttReady(payload: unknown): string | null {
 
 export function DeviceManagementScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const route = useRoute<RouteProp<RootStackParamList, 'DeviceManagement'>>();
+  const initialMode = route.params?.initialMode;
 
-  const [mode, setMode] = useState<ScreenMode>('main');
+  const [mode, setMode] = useState<ScreenMode>(initialMode || 'main');
   const [hubs, setHubs] = useState<Hub[]>([]);
   // ✅ 전역 스토어에서 허브 로딩 상태 가져오기
   const hubsLoading = hubStatusStore(state => state.hubsLoading);
@@ -134,6 +136,13 @@ export function DeviceManagementScreen() {
     loop.start();
     return () => loop.stop();
   }, [hubStep, successAnim]);
+
+  // ✅ initialMode가 변경되면 mode 업데이트
+  useEffect(() => {
+    if (initialMode && initialMode !== mode) {
+      setMode(initialMode);
+    }
+  }, [initialMode]);
 
   // ✅ 허브 프로비저닝 화면에 들어오면 "1:1 디바이스 자동연결 스캐너(BLEService)"를 확실히 멈춘다.
   // - 허브(ESP32_S3) 스캔/연결과 경쟁해서 connect 실패/노이즈 로그가 발생하는 문제 방지
@@ -505,9 +514,7 @@ export function DeviceManagementScreen() {
   }, [hubs]);
 
   const startHubScan = async () => {
-    // ✅ 허브 프로비저닝 중에는 BLEService(1:1 디바이스 자동연결/백그라운드 스캔)가 간섭하지 않도록 잠시 비활성화
-    bleService.setAutoConnectEnabled(false);
-    bleService.setDiscoverMode('none');
+    // ✅ 더미 데이터로 UI 확인용 스캔 시뮬레이션
     cleanupBleListeners();
     setHubCandidates([]);
     setSelectedHub(null);
@@ -526,14 +533,18 @@ export function DeviceManagementScreen() {
     try {
       setHubScanLoading(true);
       setDebugText('허브 스캔 시작…');
-      await hubBleService.scanForHubs(6, (c: HubBleCandidate) => {
-        setHubCandidates(prev => {
-          if (prev.some(p => p.id === c.id)) return prev;
-          return [...prev, c];
-        });
-      });
-      // stopScan 이벤트는 네이티브에서 오지만, UX상 6초 후로딩 해제
-      setTimeout(() => setHubScanLoading(false), 6500);
+      
+      // ✅ 더미 허브 리스트 (2초 후 표시)
+      setTimeout(() => {
+        const dummyHubs: HubCandidate[] = [
+          {id: '80:b5:4e:db:44:9a', name: 'ESP32_S3', rssi: -45},
+          {id: 'a1:b2:c3:d4:e5:f6', name: 'Tailing_HUB', rssi: -62},
+          {id: '11:22:33:44:55:66', name: 'ESP32_S3', rssi: -78},
+        ];
+        setHubCandidates(dummyHubs);
+        setHubScanLoading(false);
+        setDebugText(`${dummyHubs.length}개의 허브를 발견했습니다.`);
+      }, 2000);
     } catch (e: any) {
       setHubScanLoading(false);
       Toast.show({
@@ -546,86 +557,29 @@ export function DeviceManagementScreen() {
   };
 
   const connectHub = async (candidate: HubCandidate) => {
-    // #region agent log
-    fetch('http://127.0.0.1:7244/ingest/3eff9cd6-dca3-41a1-a9e7-4063579704a1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DeviceManagementScreen.tsx:515',message:'connectHub entry',data:{candidateId:candidate.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H6'})}).catch(()=>{});
-    // #endregion
+    // ✅ 더미 데이터로 UI 확인용 연결 시뮬레이션
     cleanupBleListeners();
     setDebugText('허브 연결 시도 중…');
     try {
       setHubConnectingId(candidate.id);
       setSelectedHub(candidate);
-      // #region agent log
-      fetch('http://127.0.0.1:7244/ingest/3eff9cd6-dca3-41a1-a9e7-4063579704a1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DeviceManagementScreen.tsx:521',message:'hubBleService.connect before',data:{candidateId:candidate.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H6'})}).catch(()=>{});
-      // #endregion
-      await hubBleService.connect(candidate.id);
-      // #region agent log
-      fetch('http://127.0.0.1:7244/ingest/3eff9cd6-dca3-41a1-a9e7-4063579704a1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DeviceManagementScreen.tsx:521',message:'hubBleService.connect after',data:{candidateId:candidate.id,success:true},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H6'})}).catch(()=>{});
-      // #endregion
-      // #region agent log
-      fetch('http://127.0.0.1:7244/ingest/3eff9cd6-dca3-41a1-a9e7-4063579704a1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DeviceManagementScreen.tsx:522',message:'hubBleService.startNotifications before',data:{candidateId:candidate.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H2'})}).catch(()=>{});
-      // #endregion
-      await hubBleService.startNotifications(candidate.id, (line: string) => {
-        const lower = String(line || '').trim().toLowerCase();
-        if (lower === 'wifi connected success') {
-          // ✅ 허브에서 Wi‑Fi 연결 성공 신호를 주면, 앱에서도 성공 처리로 진행
-          // (MQTT_READY는 백엔드/네트워크에 따라 지연/누락될 수 있어 BLE 신호를 신뢰)
-          if (!isProvisionDone) {
-            setHubStep('done');
-            setIsProvisionDone(true);
-            setDebugText('Wi‑Fi 연결 성공 (BLE). 허브 등록 완료');
-            // Android에서는 peripheralId가 MAC인 경우가 많음 → 그 값을 hubId로 등록
-            const macLike = /^[0-9a-f]{2}(:[0-9a-f]{2}){5}$/i.test(candidate.id);
-            if (macLike) {
-              const hubId = candidate.id.toLowerCase();
-              hubSocketService.subscribeHubMqtt(hubId);
-              registerHubToBackend(hubId)
-                .then(async () => {
-                  // ✅ 허브 등록 직후 즉시 목록 새로고침 (캐시 무시)
-                  await refreshHubs(true).catch(() => {});
-                  // ✅ 5초 후 메인 화면으로 이동 (허브 목록 업데이트 + 등록 화면 초기화 포함)
-                  setTimeout(() => {
-                    goToMainScreen();
-                  }, 5000);
-                })
-                .catch(() => {
-                  // ✅ 등록 실패해도 5초 후 메인 화면으로 이동
-                  setTimeout(() => {
-                    goToMainScreen();
-                  }, 5000);
-                });
-            } else {
-              // ✅ 5초 후 메인 화면으로 이동 (허브 목록 업데이트 + 등록 화면 초기화 포함)
-              setTimeout(() => {
-                goToMainScreen();
-              }, 5000);
-            }
-          }
-          return;
-        }
-        // (허브가 Wi‑Fi 목록 등을 보낼 수도 있으니 대응)
-        if (typeof line === 'string' && line.startsWith('ssid:')) {
-          const m = line.match(/ssid:\s*\[(.*?)\]/);
-          if (m && typeof m[1] === 'string') {
-            const list = m[1].match(/"([^"]+)"/g)?.map(x => x.replace(/"/g, '')) || [];
-            setSsidList(list);
-            setDebugText(`Wi-Fi 목록 수신 (${list.length})`);
-          }
-        }
-      });
-
+      
+      // ✅ 연결 시뮬레이션 (1.5초 후 완료)
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      
       // ✅ BLE로 허브 연결이 됐다면, 일단 허브 상태를 온라인으로 기본 세팅
-      // (허브 등록/Socket/MQTT_READY 여부와 무관하게 BLE 연결 자체는 "허브가 켜져 있음"을 의미)
       hubStatusStore.getState().setHubStatus(candidate.id.toLowerCase(), 'online');
-
-      // #region agent log
-      fetch('http://127.0.0.1:7244/ingest/3eff9cd6-dca3-41a1-a9e7-4063579704a1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DeviceManagementScreen.tsx:574',message:'setHubStep wifi',data:{candidateId:candidate.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H6'})}).catch(()=>{});
-      // #endregion
+      
       setHubStep('wifi');
       setDebugText('허브 BLE 연결 완료');
+      setHubConnectingId(null);
+      Toast.show({
+        type: 'success',
+        text1: '허브 연결 완료',
+        text2: 'Wi-Fi 설정을 진행해주세요.',
+        position: 'bottom',
+      });
     } catch (e: any) {
-      // #region agent log
-      fetch('http://127.0.0.1:7244/ingest/3eff9cd6-dca3-41a1-a9e7-4063579704a1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DeviceManagementScreen.tsx:576',message:'connectHub error',data:{candidateId:candidate.id,error:String(e?.message||e)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H6'})}).catch(()=>{});
-      // #endregion
       const msg =
         typeof e?.message === 'string'
           ? e.message
@@ -647,10 +601,22 @@ export function DeviceManagementScreen() {
     try {
       setDebugText('주변 Wi‑Fi 검색 중…');
 
+      // ✅ 더미 Wi-Fi 목록 반환 (UI 확인용)
+      setTimeout(() => {
+        const dummyWifiList = [
+          'Home_WiFi_5G',
+          'Home_WiFi_2.4G',
+          'Neighbor_WiFi',
+          'Guest_Network',
+          'Office_WiFi',
+        ];
+        setSsidList(dummyWifiList);
+        setDebugText(`${dummyWifiList.length}개의 Wi-Fi 네트워크를 발견했습니다.`);
+      }, 1500);
+      
       // iOS는 주변 Wi‑Fi 스캔이 OS 정책상 제한이 많아서 SSID 직접 입력으로 폴백
       if (Platform.OS === 'ios') {
-        setSsidList([]);
-        setDebugText('iOS에서는 주변 Wi‑Fi 목록 조회가 제한됩니다. SSID를 직접 입력해주세요.');
+        // 더미 데이터는 표시하되 안내 메시지도 표시
         return;
       }
 
@@ -699,9 +665,7 @@ export function DeviceManagementScreen() {
   };
 
   const sendWifiConfigToHub = async () => {
-    // #region agent log
-    fetch('http://127.0.0.1:7244/ingest/3eff9cd6-dca3-41a1-a9e7-4063579704a1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DeviceManagementScreen.tsx:649',message:'sendWifiConfigToHub entry',data:{hasSelectedHub:!!selectedHub,ssid:ssid.trim()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H3'})}).catch(()=>{});
-    // #endregion
+    // ✅ 더미 데이터로 UI 확인용 Wi-Fi 설정 시뮬레이션
     if (!selectedHub) return;
     const trimmedSsid = ssid.trim();
     if (trimmedSsid.length === 0) {
@@ -710,109 +674,39 @@ export function DeviceManagementScreen() {
     }
 
     try {
-      const token = await getToken();
-      const userEmail = token?.email;
-      if (!userEmail) {
-        Toast.show({
-          type: 'error',
-          text1: '로그인이 필요합니다.',
-          text2: '사용자 이메일 정보를 찾을 수 없습니다.',
-          position: 'bottom',
-        });
-        return;
-      }
-
-      // ✅ hub_project/front 참고:
-      // 형식: "wifi:<ssid>,<wifi_password>,<user_email>\n"
-      // 비밀번호가 없으면 빈 문자열로 전송
+      // ✅ Wi-Fi 정보 전송 시뮬레이션
       setHubStep('waiting');
-      setDebugText('Wi‑Fi 정보를 허브로 전송했습니다. MQTT_READY 대기 중…');
+      setDebugText('Wi‑Fi 정보를 허브로 전송했습니다. 연결 확인 중…');
       setIsProvisionDone(false);
       setProvisionStartedAt(Date.now());
-      // ✅ 사용자 요청: 민감정보 포함 원문 그대로 출력
-      console.log('[HubProvision] sendWifiConfig start', {
+      
+      console.log('[HubProvision] sendWifiConfig (시뮬레이션)', {
         hubPeripheralId: selectedHub.id,
         ssid: trimmedSsid,
         password: password || '',
-        userEmail,
       });
-      // #region agent log
-      fetch('http://127.0.0.1:7244/ingest/3eff9cd6-dca3-41a1-a9e7-4063579704a1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DeviceManagementScreen.tsx:684',message:'hubBleService.sendWifiConfig before',data:{peripheralId:selectedHub.id,ssid:trimmedSsid},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H3'})}).catch(()=>{});
-      // #endregion
-      await hubBleService.sendWifiConfig(selectedHub.id, trimmedSsid, password || '', userEmail);
-      // #region agent log
-      fetch('http://127.0.0.1:7244/ingest/3eff9cd6-dca3-41a1-a9e7-4063579704a1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'DeviceManagementScreen.tsx:684',message:'hubBleService.sendWifiConfig after',data:{peripheralId:selectedHub.id,success:true},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H3'})}).catch(()=>{});
-      // #endregion
-      // ✅ 요구사항: BLE는 앱에서 강제로 끊지 않음
-      // - 허브(ESP32)가 Wi‑Fi 설정 수신 후 자체적으로 BLE를 끊는 흐름을 가정
-      // - 앱이 disconnect를 호출하면 타이밍 이슈/예외가 늘어날 수 있어 금지
-
-      await hubSocketService.connect();
-
-      if (mqttReadyTimeoutRef.current) {
-        clearTimeout(mqttReadyTimeoutRef.current);
-        mqttReadyTimeoutRef.current = null;
-      }
-
-      const off = hubSocketService.on('MQTT_READY', async (p: unknown) => {
-        const hubId = extractHubIdFromMqttReady(p);
-        if (!hubId) return;
-        // BLE peripheral id(=UUID/임의값)와 hubId(=허브 MAC)는 매칭이 불가하므로 필터링하지 않음.
-        // 대신, Wi‑Fi 전송 이후 일정 시간 내에 들어온 첫 MQTT_READY를 성공으로 처리.
-        if (provisionStartedAt && Date.now() - provisionStartedAt > 2 * 60 * 1000) return;
-
-        off();
-        if (mqttReadyTimeoutRef.current) {
-          clearTimeout(mqttReadyTimeoutRef.current);
-          mqttReadyTimeoutRef.current = null;
-        }
-        setDebugText(`MQTT_READY 수신: ${hubId}`);
-        try {
-          await registerHubToBackend(hubId);
-          Toast.show({type: 'success', text1: '허브 연결이 완료 되었습니다', text2: hubId, position: 'bottom'});
-          // ✅ 허브 등록 직후 즉시 목록 새로고침 (캐시 무시)
-          await refreshHubs(true);
-          setIsProvisionDone(true);
-          setHubStep('done');
-
-          // ✅ 성공 시 자동으로 기기관리 메인으로 복귀 (허브 목록 업데이트 + 등록 화면 초기화)
-          setTimeout(() => {
-            goToMainScreen();
-          }, 1200);
-        } catch (e: any) {
-          Toast.show({
-            type: 'error',
-            text1: '허브 등록 실패',
-            text2: e?.response?.data?.message || e?.message || '서버에 허브를 등록할 수 없습니다.',
-            position: 'bottom',
-          });
-          setHubStep('wifi');
-        }
-      });
-
-      // ✅ 타임아웃: MQTT_READY가 안 오면 재시도 가능하게 Wi‑Fi 단계로 복귀
-      mqttReadyTimeoutRef.current = setTimeout(() => {
-        try {
-          off();
-        } catch {}
-        mqttReadyTimeoutRef.current = null;
-        setHubStep('wifi');
+      
+      // ✅ 3초 후 완료 단계로 이동 (시뮬레이션)
+      setTimeout(() => {
+        const hubId = selectedHub.id.toLowerCase();
+        setDebugText(`허브 연결 완료: ${hubId}`);
+        setIsProvisionDone(true);
+        setHubStep('done');
         Toast.show({
-          type: 'error',
-          text1: '허브 등록 확인 실패',
-          text2: 'MQTT_READY를 받지 못했습니다. Wi‑Fi 정보가 맞는지 확인 후 다시 시도해주세요.',
+          type: 'success',
+          text1: '허브 등록 완료',
+          text2: '허브가 성공적으로 등록되었습니다.',
           position: 'bottom',
         });
-      }, 60000);
+        
+        // ✅ 3초 후 메인 화면으로 이동
+        setTimeout(() => {
+          goToMainScreen();
+        }, 3000);
+      }, 3000);
     } catch (e: any) {
       setHubStep('wifi');
-      setDebugText(`Wi‑Fi 정보 전송 실패: ${e?.message || e?.toString?.() || 'unknown error'}`);
-      console.error('[HubProvision] ❌ sendWifiConfigToHub failed', {
-        message: e?.message,
-        name: e?.name,
-        stack: e?.stack,
-        error: e,
-      });
+      setDebugText(`Wi‑Fi 정보 전송 실패: ${e?.message || 'unknown error'}`);
       Toast.show({
         type: 'error',
         text1: 'Wi-Fi 정보 전송 실패',

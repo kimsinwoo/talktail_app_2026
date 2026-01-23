@@ -1279,6 +1279,41 @@ class BLEService {
   }
 
   /**
+   * 디바이스 식별용 LED 깜빡임 명령 전송 (MODE:D)
+   * @param deviceId 디바이스 ID (MAC 주소)
+   */
+  async sendIdentifyCommand(deviceId: string): Promise<boolean> {
+    try {
+      // 연결 상태 확인
+      if (Platform.OS === 'android') {
+        const isConnected = await BleManager.isPeripheralConnected(deviceId, []);
+        if (!isConnected) {
+          logger.warn('BLEService', '디바이스가 연결되지 않아 식별 명령 전송 실패', {deviceId});
+          return false;
+        }
+      }
+
+      const commandSent = await this.sendTextToDevice(deviceId, 'MODE:D');
+      if (commandSent) {
+        logger.bleSuccess('sendIdentifyCommand - command sent', {
+          deviceId,
+          command: 'MODE:D',
+        });
+        return true;
+      } else {
+        logger.warn('BLEService', '식별 명령 전송 실패', {
+          deviceId,
+          command: 'MODE:D',
+        });
+        return false;
+      }
+    } catch (error) {
+      logger.bleError('sendIdentifyCommand', error);
+      return false;
+    }
+  }
+
+  /**
    * 측정 중인지 확인
    */
   isMeasuring(): boolean {
