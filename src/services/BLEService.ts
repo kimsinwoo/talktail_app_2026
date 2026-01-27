@@ -205,21 +205,8 @@ class BLEService {
       connectedDeviceId: this.connectedDeviceId,
     });
     
-    // 포그라운드로 전환 시 자동 연결 재시도
-    if (previousState !== 'active' && nextAppState === 'active') {
-      console.log('📱 포그라운드로 전환, 자동 연결 재시도 가능');
-      // 저장된 디바이스가 있고 연결되지 않았으면 자동 연결 시도
-      if (this.savedDeviceId && !this.connectedDeviceId && this.autoConnectEnabled) {
-        // 짧은 스캔으로 저장된 디바이스 찾기
-        setTimeout(async () => {
-          try {
-            await this.startScan(5, false); // 포그라운드이므로 allowBackground = false
-          } catch (error) {
-            // 스캔 실패는 조용히 무시
-          }
-        }, 1000); // 1초 후 스캔 시작
-      }
-    }
+    // ✅ 자동 블루투스 스캔 기능 제거 (사용자 요청)
+    // 포그라운드로 전환 시 자동 스캔을 하지 않음
     
     // 백그라운드로 전환 시 스캔 중지 (백그라운드 자동 연결은 별도 인터벌로 처리)
     if (previousState === 'active' && nextAppState !== 'active') {
@@ -1560,6 +1547,20 @@ class BLEService {
             : typeof value === 'string'
               ? value.length
               : 0;
+      
+      // ✅ BLE로 받은 원본 데이터를 그대로 콘솔에 출력
+      console.log('📥 [BLE 원본 데이터 - 그대로 출력]', {
+        rawValue: value, // 원본 바이트 배열/버퍼
+        decodedValue: decodedValue, // 디코딩된 문자열 전체
+        type: originalType,
+        length: originalLength,
+        decodedLength,
+        commaCount,
+        hasNewline,
+        hasCarriageReturn,
+        hasSemicolon,
+        preview: decodedValue.substring(0, 100),
+      });
       
       // 🔍 진단 로그 (5개 값 수신 여부 확인용)
       console.log('🔍 [BLE 수신] 원본 데이터:', {
