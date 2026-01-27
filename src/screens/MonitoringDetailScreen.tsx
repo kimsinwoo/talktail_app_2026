@@ -39,7 +39,7 @@ interface MonitoringDetailScreenProps {}
 export function MonitoringDetailScreen({}: MonitoringDetailScreenProps) {
   const route = useRoute<RouteProp<RootStackParamList, 'MonitoringDetail'>>();
   const navigation = useNavigation();
-  const {petCode, deviceMac, petName: routePetName} = route.params;
+  const {petCode = '', deviceMac = '', petName: routePetName = ''} = route.params || {};
   
   const {state} = useBLE();
   const pets = userStore(s => s.pets);

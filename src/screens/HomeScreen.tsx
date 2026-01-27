@@ -662,7 +662,7 @@ export function HomeScreen({
               style={styles.serviceIconCard}
               activeOpacity={0.85}
               onPress={() => {
-                (navigation as any).navigate('Monitoring');
+                (navigation as any).navigate('DeviceManagement');
               }}>
               <View style={[styles.serviceIconContainer, {backgroundColor: '#E7F5F4'}]}>
                 <Activity size={24} color="#2E8B7E" />

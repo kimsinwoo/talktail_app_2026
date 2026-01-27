@@ -31,7 +31,10 @@ type HubDevice = {
 export function DeviceRegisterScreen() {
   const route = useRoute<DeviceRegisterRouteProp>();
   const navigation = useNavigation<DeviceRegisterNavigationProp>();
-  const hubAddress = route.params?.hubAddress || '';
+  const routeHubAddress = route.params?.hubAddress || '';
+
+  const [selectedHubAddress, setSelectedHubAddress] = useState<string>(routeHubAddress);
+  const hubAddress = selectedHubAddress;
 
   const [hubDevices, setHubDevices] = useState<HubDevice[]>([]);
   const [connectedDevices, setConnectedDevices] = useState<string[]>([]);
@@ -47,8 +50,7 @@ export function DeviceRegisterScreen() {
 
   useEffect(() => {
     if (!hubAddress) {
-      Toast.show({type: 'error', text1: '허브 주소가 없습니다.', position: 'bottom'});
-      navigation.goBack();
+      // 허브 주소가 없으면 허브 선택 화면 표시 (goBack 하지 않음)
       return;
     }
 
@@ -273,6 +275,53 @@ export function DeviceRegisterScreen() {
 
   const registeredMacs = hubDevices.map(d => d.address.toLowerCase());
   const newDevices = connectedDevices.filter(mac => !registeredMacs.includes(mac.toLowerCase()));
+
+  // 허브가 선택되지 않은 경우 허브 선택 화면 표시
+  if (!hubAddress) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <View style={styles.topHeader}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton} activeOpacity={0.8}>
+            <ChevronRight size={20} color="#888888" style={{transform: [{rotate: '180deg'}]}} />
+            <Text style={styles.backText}>뒤로</Text>
+          </TouchableOpacity>
+          <Text style={styles.topHeaderTitle}>디바이스 등록</Text>
+          <View style={{width: 60}} />
+        </View>
+
+        <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+          <View style={styles.section}>
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>허브 선택</Text>
+              <Text style={styles.cardSubtle}>디바이스를 등록할 허브를 선택하세요.</Text>
+
+              {hubs.length === 0 ? (
+                <Text style={[styles.cardSubtle, {marginTop: 16}]}>
+                  등록된 허브가 없습니다. 먼저 허브를 등록해주세요.
+                </Text>
+              ) : (
+                <View style={{marginTop: 16, gap: 10}}>
+                  {hubs.map(h => (
+                    <TouchableOpacity
+                      key={h.address}
+                      style={styles.hubSelectCard}
+                      onPress={() => setSelectedHubAddress(h.address)}
+                      activeOpacity={0.85}>
+                      <View style={{flex: 1}}>
+                        <Text style={styles.hubSelectName}>{h.name || h.address}</Text>
+                        <Text style={styles.hubSelectAddress}>{h.address}</Text>
+                      </View>
+                      <ChevronRight size={20} color="#888888" />
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+            </View>
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -507,5 +556,24 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     fontSize: 14,
     color: '#111827',
+  },
+  hubSelectCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F9F9F9',
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  hubSelectName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#111827',
+    marginBottom: 4,
+  },
+  hubSelectAddress: {
+    fontSize: 13,
+    color: '#6B7280',
   },
 });
