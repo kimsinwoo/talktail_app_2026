@@ -1,4 +1,4 @@
-import React, {useState, useEffect} from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -20,11 +20,11 @@ import {
   ChevronRight,
   PawPrint,
 } from 'lucide-react-native';
-import {SafeAreaView} from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
-import {orgStore} from '../store/orgStore';
-import {userStore} from '../store/userStore';
-import {useNavigation} from '@react-navigation/native';
+import { orgStore } from '../store/orgStore';
+import { userStore } from '../store/userStore';
+import { useNavigation } from '@react-navigation/native';
 
 interface MyPageScreenProps {
   // onAddToCart?: (productId: number) => void; // 스토어 기능 임시 비활성화
@@ -90,12 +90,7 @@ const menuItems = [
   },
 ];
 
-<<<<<<< HEAD
-
-export function MyPageScreen({onAddToCart}: MyPageScreenProps) {
-=======
-export function MyPageScreen(/* {onAddToCart}: MyPageScreenProps */) {
->>>>>>> kms
+export function MyPageScreen({ onAddToCart }: MyPageScreenProps) {
   const navigation = useNavigation();
   const [refreshing, setRefreshing] = useState(false);
 
@@ -119,8 +114,6 @@ export function MyPageScreen(/* {onAddToCart}: MyPageScreenProps */) {
     loadLoading: petsLoading,
     loadError: petsError,
   } = userState;
-
-
 
   // 초기 데이터 로드
   useEffect(() => {
@@ -185,7 +178,9 @@ export function MyPageScreen(/* {onAddToCart}: MyPageScreenProps */) {
       default:
         Toast.show({
           type: 'info',
-          text1: `${menuItems.find(m => m.id === menuId)?.title} 화면으로 이동합니다`,
+          text1: `${
+            menuItems.find(m => m.id === menuId)?.title
+          } 화면으로 이동합니다`,
           position: 'bottom',
         });
     }
@@ -219,7 +214,8 @@ export function MyPageScreen(/* {onAddToCart}: MyPageScreenProps */) {
         contentContainerStyle={styles.scrollContent}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
-        }>
+        }
+      >
         {/* Header */}
         <View style={styles.header}>
           {isLoading ? (
@@ -281,12 +277,14 @@ export function MyPageScreen(/* {onAddToCart}: MyPageScreenProps */) {
                   key={item.id}
                   style={styles.menuItem}
                   onPress={() => handleMenuClick(item.id)}
-                  activeOpacity={0.7}>
+                  activeOpacity={0.7}
+                >
                   <View
                     style={[
                       styles.menuIconContainer,
-                      {backgroundColor: item.bgColor},
-                    ]}>
+                      { backgroundColor: item.bgColor },
+                    ]}
+                  >
                     <Icon size={22} color={item.color} />
                   </View>
                   <View style={styles.menuInfo}>
@@ -302,8 +300,11 @@ export function MyPageScreen(/* {onAddToCart}: MyPageScreenProps */) {
             <TouchableOpacity
               style={styles.menuItem}
               onPress={() => handleMenuClick('settings')}
-              activeOpacity={0.7}>
-              <View style={[styles.menuIconContainer, styles.settingsIconContainer]}>
+              activeOpacity={0.7}
+            >
+              <View
+                style={[styles.menuIconContainer, styles.settingsIconContainer]}
+              >
                 <Settings size={22} color="#666666" />
               </View>
               <View style={styles.menuInfo}>
@@ -317,8 +318,11 @@ export function MyPageScreen(/* {onAddToCart}: MyPageScreenProps */) {
               style={styles.menuItem}
               onPress={handleLogout}
               disabled={logoutLoading}
-              activeOpacity={0.7}>
-              <View style={[styles.menuIconContainer, styles.logoutIconContainer]}>
+              activeOpacity={0.7}
+            >
+              <View
+                style={[styles.menuIconContainer, styles.logoutIconContainer]}
+              >
                 {logoutLoading ? (
                   <ActivityIndicator size="small" color="#F03F3F" />
                 ) : (
@@ -339,7 +343,6 @@ export function MyPageScreen(/* {onAddToCart}: MyPageScreenProps */) {
           <Text style={styles.versionText}>Talktail v1.0.0</Text>
         </View>
       </ScrollView>
-
     </SafeAreaView>
   );
 }
@@ -361,7 +364,7 @@ const styles = StyleSheet.create({
     paddingTop: 32,
     paddingBottom: 24,
     shadowColor: '#000',
-    shadowOffset: {width: 0, height: 1},
+    shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
     shadowRadius: 2,
     elevation: 2,
@@ -464,7 +467,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#f0f0f0',
     shadowColor: '#000',
-    shadowOffset: {width: 0, height: 1},
+    shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
     shadowRadius: 2,
     elevation: 1,
@@ -522,7 +525,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#f0f0f0',
     shadowColor: '#000',
-    shadowOffset: {width: 0, height: 1},
+    shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
     shadowRadius: 2,
     elevation: 1,
@@ -596,7 +599,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#f0f0f0',
     shadowColor: '#000',
-    shadowOffset: {width: 0, height: 1},
+    shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
     shadowRadius: 2,
     elevation: 1,
@@ -827,7 +830,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#f0f0f0',
     shadowColor: '#000',
-    shadowOffset: {width: 0, height: 1},
+    shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
     shadowRadius: 2,
     elevation: 1,
