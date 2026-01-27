@@ -17,7 +17,6 @@ import {
   TrendingDown,
   Minus,
   BarChart3,
-  Wifi,
   Play,
   Square,
   X,
@@ -28,6 +27,7 @@ import {useBLE} from '../services/BLEContext';
 import {bleService} from '../services/BLEService';
 import {hubSocketService} from '../services/HubSocketService';
 import {hubStatusStore} from '../store/hubStatusStore';
+import {userStore, Pet} from '../store/userStore';
 import {apiService} from '../services/ApiService';
 import {calorieCalculationService} from '../services/CalorieCalculationService';
 import {backendApiService} from '../services/BackendApiService';
@@ -35,15 +35,20 @@ import {backendNotificationService} from '../services/BackendNotificationService
 import {getToken} from '../utils/storage';
 import Toast from 'react-native-toast-message';
 import {Flame} from 'lucide-react-native';
+<<<<<<< HEAD
 import {notificationService} from '../services/NotificationService';
 import {telemetryService} from '../services/TelemetryService';
 import {type NormalizedTelemetry, getDisplayHR, isSpecialHRValue, getHRSpecialMessage} from '../types/telemetry';
 import {userStore} from '../store/userStore';
 import {Modal} from 'react-native';
+=======
+import {useNavigation} from '@react-navigation/native';
+import {ChevronRight, Plus, Wifi, Bluetooth, Eye} from 'lucide-react-native';
+>>>>>>> kms
 
 interface MonitoringScreenProps {
-  petId: string;
-  petName: string;
+  petId?: string;
+  petName?: string;
   petImage?: string;
   autoStart?: boolean; // ✅ 펫 선택 후 자동 측정 시작 플래그
 }
@@ -56,6 +61,7 @@ export function MonitoringScreen({
 }: MonitoringScreenProps) {
   const navigation = useNavigation();
   const {state, dispatch} = useBLE();
+<<<<<<< HEAD
   const [tempHistory, setTempHistory] = useState<number[]>([]);
   const [dailyCalories, setDailyCalories] = useState<number>(0);
   const [calorieHistory, setCalorieHistory] = useState<Array<{timestamp: number; calories: number}>>([]);
@@ -68,6 +74,16 @@ export function MonitoringScreen({
   const [selectedHub, setSelectedHub] = useState<string>('');
   const [selectedHubDevice, setSelectedHubDevice] = useState<string>('');
   const [latestTelemetryByDevice, setLatestTelemetryByDevice] = useState<Record<string, NormalizedTelemetry>>({});
+=======
+  
+  // ✅ 반려동물 목록 가져오기
+  const pets = userStore(s => s.pets);
+  
+  // ✅ Hub 모드(허브 경유) 상태
+  const [hubs, setHubs] = useState<Array<{address: string; name: string}>>([]);
+  const [selectedHub, setSelectedHub] = useState<string>('');
+  const [latestTelemetryByDevice, setLatestTelemetryByDevice] = useState<Record<string, any>>({});
+>>>>>>> kms
   const [lastHubTelemetryAt, setLastHubTelemetryAt] = useState<number | null>(null);
   const [registeredDevices, setRegisteredDevices] = useState<string[]>([]); // ✅ 등록된 디바이스 목록
   const [isRequestingDevices, setIsRequestingDevices] = useState(false); // ✅ 전체 연결 요청 중
@@ -78,6 +94,7 @@ export function MonitoringScreen({
   const {pets, fetchPets} = userState;
   
   // ✅ 전역 허브 상태 스토어 구독 (실시간 업데이트)
+<<<<<<< HEAD
   const hubStatus = hubStatusStore(state => selectedHub ? state.hubStatus[selectedHub] : 'unknown');
   const connectedDevicesByHub = hubStatusStore(state => state.connectedDevicesByHub);
 
@@ -98,6 +115,24 @@ export function MonitoringScreen({
   // 텔레메트리를 수신했다면 화면은 표시되도록 한다.
   const isHubMode = !!selectedHub && hasHubDevices && !isBleMode;
   const hubSelectedTelemetry = selectedHubDevice ? latestTelemetryByDevice[selectedHubDevice] : null;
+=======
+  const globalHubs = hubStatusStore(s => s.hubs);
+  const hubStatuses = hubStatusStore(s => s.hubStatus);
+  const connectedDevicesByHub = hubStatusStore(s => s.connectedDevicesByHub);
+  
+  // ✅ 허브 상태 계산
+  const hubOnlineCount = globalHubs.filter(h => hubStatuses[h.address] === 'online').length;
+  const hubTotalCount = globalHubs.length;
+  
+  // ✅ 허브 연결 디바이스 개수 계산
+  const hubConnectedDeviceCount = Object.values(connectedDevicesByHub).reduce(
+    (sum, devices) => sum + (devices?.length || 0),
+    0
+  );
+  
+  // ✅ 스마트폰(BLE) 연결 디바이스 개수 계산
+  const bleConnectedDeviceCount = state.isConnected && state.deviceId ? 1 : 0;
+>>>>>>> kms
 
   // ✅ 허브 생존 폴링: state:hub → 10초 내 데이터 없으면 offline 판정
   // ✅ 측정 중에는 폴링을 중지하여 state:hub 전송 억제
@@ -159,6 +194,7 @@ export function MonitoringScreen({
 
   // ✅ parseTelemetryLine 함수는 이제 types/telemetry.ts의 normalizeTelemetryPayload로 대체됨
 
+<<<<<<< HEAD
   // 펫 정보 (실제로는 데이터베이스나 설정에서 가져와야 함)
   const petWeight = 5; // kg (예시)
   const restingHeartRate = 70; // 안정 시 심박수 (BPM)
@@ -376,9 +412,13 @@ export function MonitoringScreen({
   const healthScoreBgColor = healthScoreResult.bgColor;
 
   // BLE 데이터 수신 설정 및 백엔드 연동
+=======
+  // ✅ 허브 생존 폴링: state:hub → 10초 내 데이터 없으면 offline 판정
+>>>>>>> kms
   useEffect(() => {
-    bleService.setPetName(petName);
+    if (globalHubs.length === 0) return;
     
+<<<<<<< HEAD
     // 사용자 정보 설정 (백엔드 연동용)
     const setupUserInfo = async () => {
       try {
@@ -393,98 +433,18 @@ export function MonitoringScreen({
         console.error('사용자 정보 설정 실패:', error);
       }
     };
+=======
+    const stops = globalHubs.map(hub => 
+      hubSocketService.startHubPolling(hub.address, {intervalMs: 30000, timeoutMs: 10000})
+    );
+>>>>>>> kms
     
-    setupUserInfo();
-    
-    // 허브 연결 상태 확인 및 자동 BLE 전환 체크
-    // 백엔드 서버가 없을 수 있으므로 비활성화
-    // 백엔드 서버가 준비되면 아래 주석을 해제하여 사용
-    /*
-    const checkConnectionStatus = async () => {
-      if (!state.deviceId) {
-        return;
-      }
-
-      try {
-        const connectionResponse = await backendApiService.getDeviceConnection(state.deviceId);
-        
-        // 백엔드 서버가 없으면 조용히 무시
-        if (!connectionResponse.success) {
-          return;
-        }
-        
-        if (connectionResponse.data) {
-          const {isHubDisconnected, shouldUseApp} = connectionResponse.data;
-          
-          // 허브 연결이 끊겼고, 앱에서 BLE 연결이 필요하면
-          if (isHubDisconnected && shouldUseApp && !state.isConnected) {
-            console.log('허브 연결 끊김 감지, BLE 자동 연결 필요');
-            // BLE 연결 시도는 사용자가 직접 해야 하므로 여기서는 알림만 표시
-            // 실제 자동 연결은 useSafeBLEScan 훅을 사용하는 것이 좋음
-          }
-        }
-      } catch (error) {
-        // 백엔드 연결 실패는 조용히 무시 (서버가 없을 수 있음)
-        // console.error는 제거하여 로그 스팸 방지
-      }
-    };
-
-    // 주기적으로 연결 상태 확인 (30초마다)
-    const connectionCheckInterval = setInterval(() => {
-      if (state.deviceId) {
-        checkConnectionStatus();
-      }
-    }, 30000);
-    */
-    const connectionCheckInterval: ReturnType<typeof setInterval> | null = null;
-
-    // 초기 한 번 확인 (백엔드 서버가 없을 수 있으므로 비활성화)
-    // checkConnectionStatus();
-    
-    console.log('MonitoringScreen: setCallbacks 호출됨');
-    
-    bleService.setCallbacks({
-      onDataReceived: (data) => {
-        // ⚠️ 최적화: BLEService에서 이미 UPDATE_DATAS를 dispatch하므로
-        // 여기서는 중복 dispatch 제거하고 체온 히스토리만 업데이트
-        // 로그도 최소화하여 성능 개선
-        
-        // 체온 히스토리 업데이트만 수행 (UI 최적화)
-        if (data.temp !== undefined && data.temp !== null && !isNaN(data.temp) && data.temp > 0) {
-          setTempHistory((prev) => {
-            const newHistory = [...prev, data.temp!];
-            return newHistory.slice(-10); // 최근 10개만 유지
-          });
-        }
-      },
-      onDeviceConnected: (deviceId) => {
-        dispatch({type: 'SET_CONNECTED', payload: true});
-        dispatch({type: 'SET_DEVICE_ID', payload: deviceId});
-        setIsMeasuring(false); // 연결 시 측정 상태 초기화
-      },
-      onDeviceDisconnected: () => {
-        dispatch({type: 'SET_CONNECTED', payload: false});
-        dispatch({type: 'SET_DEVICE_ID', payload: null});
-        setIsMeasuring(false); // 연결 해제 시 측정 상태 초기화
-      },
-    });
-
-    // 백그라운드에서도 데이터 수신 가능하도록 설정
-    const subscription = AppState.addEventListener('change', (nextAppState) => {
-      if (nextAppState === 'active' || nextAppState === 'background') {
-        // 백그라운드에서도 BLE 연결 유지
-        console.log('App state changed:', nextAppState);
-      }
-    });
-
     return () => {
-      subscription.remove();
-      if (connectionCheckInterval) {
-        clearInterval(connectionCheckInterval);
-      }
+      stops.forEach(stop => stop());
     };
-  }, [petName, petId, dispatch, state.deviceId, state.isConnected]);
+  }, [globalHubs]);
 
+<<<<<<< HEAD
   // ✅ 전역 스토어에서 허브 목록 구독 (실시간 업데이트)
   const globalHubs = hubStatusStore(state => state.hubs);
   
@@ -571,8 +531,10 @@ export function MonitoringScreen({
       }, 20000);
     }
   };
+=======
+>>>>>>> kms
 
-  // ✅ Hub 소켓 구독
+  // ✅ Hub 소켓 구독 및 초기화
   useEffect(() => {
     console.log('[MonitoringScreen] 🔌 Hub 소켓 구독 useEffect 시작');
     (async () => {
@@ -590,6 +552,7 @@ export function MonitoringScreen({
         
         // ✅ 전역 허브 상태 스토어 초기화 (허브 목록도 자동 로드됨)
         hubStatusStore.getState().initialize();
+<<<<<<< HEAD
         
         // ✅ 모니터링 화면 진입 시 선택된 허브가 있으면 즉시 상태 확인
         // ✅ 측정 중이 아닐 때만 state:hub 요청
@@ -609,20 +572,16 @@ export function MonitoringScreen({
         }
       } catch (error) {
         console.error('[MonitoringScreen] 소켓 연결 실패:', error);
+=======
+      } catch {
+        // ignore
+>>>>>>> kms
       }
     })();
 
     // ✅ CONNECTED_DEVICES 이벤트는 전역 스토어에서 처리
-    // 여기서는 디바이스 자동 선택만 처리
-    const offConnectedDevices = hubSocketService.on('CONNECTED_DEVICES', (payload: any) => {
-      const hubId = String(payload?.hubAddress || payload?.hubId || payload?.hub_address || '');
-      if (!hubId) return;
-      // ✅ 전역 스토어에서 최신 연결된 디바이스 목록 가져오기
-      const latestDevices = hubStatusStore.getState().getConnectedDevices(hubId);
-      // 선택 디바이스가 없으면 첫 온라인 디바이스 자동 선택
-      if (hubId === selectedHub && !selectedHubDevice && latestDevices[0]) {
-        setSelectedHubDevice(String(latestDevices[0]));
-      }
+    const offConnectedDevices = hubSocketService.on('CONNECTED_DEVICES', () => {
+      // 전역 스토어에서 자동 처리됨
     });
 
     // ✅ TelemetryService를 사용하여 텔레메트리 구독 (중앙화된 파싱 및 처리)
@@ -647,12 +606,77 @@ export function MonitoringScreen({
       console.log('선택된 디바이스:', selectedHubDevice);
       console.log('═══════════════════════════════════════════════════════');
 
+<<<<<<< HEAD
       // ✅ 선택된 디바이스의 데이터만 처리
       if (selectedHubDevice && telemetry.deviceId !== selectedHubDevice) {
         console.log('[MonitoringScreen] ⏭️ Telemetry skipped (different device)', {
           received: telemetry.deviceId,
           selected: selectedHubDevice,
         });
+=======
+      // ✅ 1) 기존 sensor_data(object) 지원
+      if (payload && typeof payload === 'object') {
+        const type = payload.type;
+        const deviceId = payload.deviceId;
+        const hubIdFromPayload =
+          typeof payload.hubId === 'string'
+            ? payload.hubId
+            : typeof payload.hubAddress === 'string'
+              ? payload.hubAddress
+              : typeof payload.hub_address === 'string'
+                ? payload.hub_address
+                : '';
+
+        // ✅ 2) data가 문자열로 오는 케이스 지원: "device_mac_address-sampling_rate, hr, spo2, temp, battery"
+        // 예: "d4:d5:3f:28:e1:f4-54.12,8,0,34.06,8"
+        if (type === 'sensor_data' && typeof payload.data === 'string') {
+          const parsed = parseTelemetryLine(payload.data);
+          if (!parsed) {
+            console.warn('[MonitoringScreen] Failed to parse telemetry string', payload.data);
+            return;
+          }
+          const now = Date.now();
+          const normalized = {
+            type: 'sensor_data',
+            hubId: hubIdFromPayload,
+            deviceId: parsed.deviceMac,
+            data: {
+              hr: parsed.hr,
+              spo2: parsed.spo2,
+              temp: parsed.temp,
+              battery: parsed.battery,
+              sampling_rate: parsed.samplingRate,
+              timestamp: now,
+            },
+            _receivedAt: now,
+          };
+          console.log('[MonitoringScreen] ✅ Normalized telemetry for device', {
+            deviceMac: parsed.deviceMac,
+            hr: parsed.hr,
+            spo2: parsed.spo2,
+            temp: parsed.temp,
+            battery: parsed.battery,
+            samplingRate: parsed.samplingRate,
+          });
+          setLatestTelemetryByDevice(prev => ({...prev, [parsed.deviceMac]: normalized}));
+          setLastHubTelemetryAt(now);
+          return;
+        }
+
+        // ✅ 3) 기존 object 형식 지원 (data가 object인 경우)
+        if (type === 'sensor_data' && payload.data && typeof payload.data === 'object') {
+          if (typeof deviceId !== 'string' || deviceId.length === 0) return;
+          setLatestTelemetryByDevice(prev => ({
+            ...prev,
+            [deviceId]: {...payload, _receivedAt: Date.now()},
+          }));
+          const now = Date.now();
+          setLastHubTelemetryAt(now);
+          return;
+        }
+
+        // ✅ 다른 타입은 무시
+>>>>>>> kms
         return;
       }
 
@@ -661,6 +685,7 @@ export function MonitoringScreen({
       if (hr !== null && hr !== undefined && isSpecialHRValue(hr)) {
         // ✅ 쿨다운 체크: 같은 값이면 1분 내에 다시 알림하지 않음
         const now = Date.now();
+<<<<<<< HEAD
         if (lastHubHrNotification && 
             lastHubHrNotification.value === hr && 
             now - lastHubHrNotification.timestamp < HR_NOTIFICATION_COOLDOWN) {
@@ -733,6 +758,32 @@ export function MonitoringScreen({
       } else if (stopRequested) {
         // ✅ 측정 중지 요청이 있으면 TELEMETRY가 들어와도 측정 중으로 변경하지 않음
         console.log('[MonitoringScreen] ⏸️ Telemetry received but stopRequested=true, ignoring auto-start');
+=======
+        const normalized = {
+          type: 'sensor_data',
+          hubId: selectedHub,
+          deviceId: parsed.deviceMac,
+          data: {
+            hr: parsed.hr,
+            spo2: parsed.spo2,
+            temp: parsed.temp,
+            battery: parsed.battery,
+            sampling_rate: parsed.samplingRate,
+            timestamp: now,
+          },
+          _receivedAt: now,
+        };
+        console.log('[MonitoringScreen] ✅ Normalized telemetry from string', {
+          deviceMac: parsed.deviceMac,
+          hr: parsed.hr,
+          spo2: parsed.spo2,
+          temp: parsed.temp,
+          battery: parsed.battery,
+          samplingRate: parsed.samplingRate,
+        });
+        setLatestTelemetryByDevice(prev => ({...prev, [parsed.deviceMac]: normalized}));
+        setLastHubTelemetryAt(now);
+>>>>>>> kms
       }
     });
 
@@ -740,47 +791,18 @@ export function MonitoringScreen({
       offConnectedDevices();
       offTelemetry();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedHub, selectedHubDevice]);
+  }, []);
 
-  // 실시간 칼로리 추적 (1분마다 계산) - 데이터가 있을 때만
-  useEffect(() => {
-    if (!state.isConnected || 
-        heartRate === null || heartRate === undefined ||
-        temperature === null || temperature === undefined ||
-        spo2 === null || spo2 === undefined) return;
 
-    const interval = setInterval(() => {
-      // 1분 = 1/60 시간
-      const minuteResult = calorieCalculationService.calculateCalories({
-        weight: petWeight,
-        heartRate: heartRate,
-        restingHeartRate: restingHeartRate,
-        temperature: temperature,
-        spo2: spo2,
-        timeInterval: 1 / 60, // 1분
-      });
+  // ✅ 초기 상태 확인
+  const hasHubs = globalHubs.length > 0;
+  const hasDevices = pets.some(pet => pet.device_address);
+  const isInitialState = !hasHubs && !hasDevices;
 
-      if (minuteResult.isValid) {
-        setCalorieHistory(prev => {
-          const newHistory = [...prev, {
-            timestamp: Date.now(),
-            calories: minuteResult.calories,
-          }];
-          // 최근 24시간 데이터만 유지 (1440분)
-          const filtered = newHistory.filter(
-            item => Date.now() - item.timestamp < 24 * 60 * 60 * 1000
-          );
-          
-          // 하루 총 칼로리 계산
-          const total = filtered.reduce((sum, item) => sum + item.calories, 0);
-          setDailyCalories(total);
-          
-          return filtered;
-        });
-      }
-    }, 60000); // 1분마다
+  // ✅ 대시보드 미리보기 모드
+  const [showDashboardPreview, setShowDashboardPreview] = useState(false);
 
+<<<<<<< HEAD
     return () => clearInterval(interval);
   }, [state.isConnected, heartRate, temperature, spo2, petWeight, restingHeartRate]);
 
@@ -1231,6 +1253,96 @@ export function MonitoringScreen({
         return <Minus size={14} color="#9CA3AF" />;
     }
   };
+=======
+  // ✅ 반려동물과 디바이스 매칭하여 데이터 준비
+  let petDeviceData = pets
+    .filter(pet => pet.device_address) // device_address가 있는 반려동물만
+    .map(pet => {
+      const deviceMac = pet.device_address!;
+      const telemetry = latestTelemetryByDevice[deviceMac];
+      const deviceData = telemetry?.data || {};
+      
+      // 연결 상태 확인
+      const isHubConnected = Object.values(connectedDevicesByHub).some(
+        devices => devices?.includes(deviceMac)
+      );
+      const isBleConnected = state.isConnected && state.deviceId === deviceMac;
+      const connectionType = isHubConnected ? 'hub' : isBleConnected ? 'ble' : 'none';
+      
+      return {
+        pet,
+        deviceMac,
+        telemetry,
+        deviceData,
+        connectionType,
+        receivedAt: telemetry?._receivedAt,
+      };
+    });
+
+  // ✅ 미리보기 모드일 때 더미 데이터 추가
+  if (showDashboardPreview && petDeviceData.length === 0) {
+    petDeviceData = [
+      {
+        pet: {
+          pet_code: 'demo-1',
+          name: '뽀삐',
+          device_address: 'd4:d5:3f:28:e1:f4',
+        } as Pet,
+        deviceMac: 'd4:d5:3f:28:e1:f4',
+        telemetry: {
+          type: 'sensor_data',
+          deviceId: 'd4:d5:3f:28:e1:f4',
+          data: {
+            hr: 120,
+            spo2: 98,
+            temp: 38.5,
+            battery: 85,
+            sampling_rate: 50,
+            timestamp: Date.now(),
+          },
+          _receivedAt: Date.now(),
+        },
+        deviceData: {
+          hr: 120,
+          spo2: 98,
+          temp: 38.5,
+          battery: 85,
+        },
+        connectionType: 'hub' as const,
+        receivedAt: Date.now(),
+      },
+      {
+        pet: {
+          pet_code: 'demo-2',
+          name: '치즈',
+          device_address: 'a1:b2:c3:d4:e5:f6',
+        } as Pet,
+        deviceMac: 'a1:b2:c3:d4:e5:f6',
+        telemetry: {
+          type: 'sensor_data',
+          deviceId: 'a1:b2:c3:d4:e5:f6',
+          data: {
+            hr: 95,
+            spo2: 97,
+            temp: 37.8,
+            battery: 72,
+            sampling_rate: 50,
+            timestamp: Date.now(),
+          },
+          _receivedAt: Date.now(),
+        },
+        deviceData: {
+          hr: 95,
+          spo2: 97,
+          temp: 37.8,
+          battery: 72,
+        },
+        connectionType: 'hub' as const,
+        receivedAt: Date.now(),
+      },
+    ];
+  }
+>>>>>>> kms
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -1240,11 +1352,9 @@ export function MonitoringScreen({
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.headerTitle}>실시간 모니터링</Text>
-          <Text style={styles.headerSubtitle}>
-            우리 아이의 실시간 건강 데이터
-          </Text>
         </View>
 
+<<<<<<< HEAD
         {/* Pet Profile Card */}
         <View style={styles.section}>
           <View style={styles.petProfileCard}>
@@ -1411,68 +1521,205 @@ export function MonitoringScreen({
               <View>
                 <Text style={styles.batteryTitle}>배터리</Text>
                 <Text style={styles.batterySub}>{isBleMode ? 'BLE 디바이스' : isHubMode ? '허브 디바이스' : '—'}</Text>
+=======
+        {/* ✅ 초기 상태: 허브/디바이스 등록 안내 */}
+        {isInitialState && !showDashboardPreview ? (
+          <View style={styles.section}>
+            <View style={styles.initialStateCard}>
+              <Text style={styles.initialStateTitle}>모니터링을 시작하세요</Text>
+              <Text style={styles.initialStateSubtitle}>
+                허브 또는 디바이스를 등록하여 반려동물의 건강을 모니터링할 수 있습니다
+              </Text>
+              
+              <View style={styles.initialStateButtons}>
+                <TouchableOpacity
+                  style={styles.initialStateButton}
+                  onPress={() => {
+                    (navigation as any).navigate('DeviceManagement', {initialMode: 'hubProvision'});
+                  }}
+                  activeOpacity={0.85}>
+                  <View style={[styles.initialStateButtonIcon, {backgroundColor: '#E7F5F4'}]}>
+                    <Wifi size={24} color="#2E8B7E" />
+                  </View>
+                  <Text style={styles.initialStateButtonTitle}>허브 등록</Text>
+                  <Text style={styles.initialStateButtonSubtitle}>
+                    허브를 등록하여 여러 디바이스를 한 번에 관리하세요
+                  </Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity
+                  style={styles.initialStateButton}
+                  onPress={() => {
+                    (navigation as any).navigate('DeviceManagement', {initialMode: 'ble1to1'});
+                  }}
+                  activeOpacity={0.85}>
+                  <View style={[styles.initialStateButtonIcon, {backgroundColor: '#EEF2FF'}]}>
+                    <Bluetooth size={24} color="#4F46E5" />
+                  </View>
+                  <Text style={styles.initialStateButtonTitle}>디바이스 등록</Text>
+                  <Text style={styles.initialStateButtonSubtitle}>
+                    블루투스로 디바이스를 직접 연결하세요
+                  </Text>
+                </TouchableOpacity>
+
+                {/* 대시보드 화면 미리보기 버튼 */}
+                <TouchableOpacity
+                  style={styles.previewButton}
+                  onPress={() => setShowDashboardPreview(true)}
+                  activeOpacity={0.85}>
+                  <Eye size={18} color="#f0663f" />
+                  <Text style={styles.previewButtonText}>모니터링 화면 미리보기</Text>
+                </TouchableOpacity>
+>>>>>>> kms
               </View>
             </View>
-            <Text style={styles.batteryValue}>{typeof battery === 'number' ? `${battery}%` : '--'}</Text>
           </View>
-        </View>
+        ) : null}
 
-        {/* Biometric Cards */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>생체 신호</Text>
-          <View style={styles.biometricGrid}>
-            {biometricCards.map(card => {
-              const Icon = card.icon;
-              return (
-                <View key={card.id} style={styles.biometricCard}>
-                  <View style={styles.biometricCardHeader}>
-                    <View
-                      style={[
-                        styles.biometricIconContainer,
-                        {backgroundColor: card.bgColor},
-                      ]}>
-                      <Icon size={20} color={card.color} />
+        {/* ✅ 대시보드 화면 (허브/디바이스 등록됨 또는 미리보기) */}
+        {(!isInitialState || showDashboardPreview) && (
+          <>
+            {/* 미리보기 모드일 때 뒤로가기 버튼 */}
+            {showDashboardPreview && (
+              <View style={styles.section}>
+                <TouchableOpacity
+                  style={styles.backButton}
+                  onPress={() => setShowDashboardPreview(false)}
+                  activeOpacity={0.85}>
+                  <Text style={styles.backButtonText}>← 등록 화면으로 돌아가기</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* ✅ 허브 및 디바이스 상태 요약 */}
+            <View style={styles.section}>
+              <View style={styles.statusSummaryCard}>
+                <View style={styles.statusSummaryRow}>
+                  <View style={styles.statusSummaryItem}>
+                    <Text style={styles.statusSummaryLabel}>허브 상태</Text>
+                    <View style={styles.statusSummaryValueRow}>
+                      <View style={[
+                        styles.statusDot,
+                        {backgroundColor: (showDashboardPreview ? 1 : hubOnlineCount) > 0 ? '#2E8B7E' : '#F03F3F'}
+                      ]} />
+                      <Text style={styles.statusSummaryValue}>
+                        {(showDashboardPreview ? 1 : hubOnlineCount) > 0 ? 'ON' : 'OFF'}
+                      </Text>
                     </View>
-                    {card.trend && getTrendIcon(card.trend)}
-                  </View>
-                  <Text style={styles.biometricTitle}>{card.title}</Text>
-                  <View style={styles.biometricValueRow}>
-                    <Text style={styles.biometricValue}>{card.value}</Text>
-                    <Text style={styles.biometricUnit}>{card.unit}</Text>
-                  </View>
-                  {card.subtitle && (
-                    <Text style={styles.biometricSubtitle}>{card.subtitle}</Text>
-                  )}
-                  <View
-                    style={[
-                      styles.biometricStatus,
-                      {
-                        backgroundColor: card.statusColor + '15',
-                      },
-                    ]}>
-                    <Text
-                      style={[
-                        styles.biometricStatusText,
-                        {color: card.statusColor},
-                      ]}>
-                      {card.status}
+                    <Text style={styles.statusSummarySubtext}>
+                      {showDashboardPreview ? '1/1개 온라인' : `${hubOnlineCount}/${hubTotalCount}개 온라인`}
                     </Text>
                   </View>
+                  
+                  <View style={styles.statusSummaryDivider} />
+                  
+                  <View style={styles.statusSummaryItem}>
+                    <Text style={styles.statusSummaryLabel}>허브 연결 디바이스</Text>
+                    <Text style={styles.statusSummaryValue}>
+                      {showDashboardPreview ? '2개' : `${hubConnectedDeviceCount}개`}
+                    </Text>
+                    <Text style={styles.statusSummarySubtext}>허브를 통해 연결</Text>
+                  </View>
+                  
+                  <View style={styles.statusSummaryDivider} />
+                  
+                  <View style={styles.statusSummaryItem}>
+                    <Text style={styles.statusSummaryLabel}>스마트폰 연결</Text>
+                    <Text style={styles.statusSummaryValue}>
+                      {showDashboardPreview ? '0개' : `${bleConnectedDeviceCount}개`}
+                    </Text>
+                    <Text style={styles.statusSummarySubtext}>직접 연결</Text>
+                  </View>
                 </View>
-              );
-            })}
-          </View>
-        </View>
+              </View>
+            </View>
 
-        {/* History Button */}
-        <View style={styles.section}>
-          <TouchableOpacity
-            style={styles.historyButton}
-            activeOpacity={0.8}>
-            <BarChart3 size={20} color="white" />
-            <Text style={styles.historyButtonText}>건강 기록 보기</Text>
-          </TouchableOpacity>
-        </View>
+            {/* ✅ 반려동물별 디바이스 데이터 카드 */}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>반려동물 모니터링</Text>
+              {petDeviceData.length === 0 ? (
+                <View style={styles.emptyStateCard}>
+                  <Text style={styles.emptyStateText}>
+                    등록된 디바이스가 없습니다
+                  </Text>
+                  <Text style={styles.emptyStateSubtext}>
+                    반려동물에 디바이스를 등록해주세요
+                  </Text>
+                </View>
+              ) : (
+                petDeviceData.map(({pet, deviceMac, deviceData, connectionType}) => {
+                  const deviceHr = deviceData.hr ?? 0;
+                  const deviceSpo2 = deviceData.spo2 ?? 0;
+                  const deviceTemp = deviceData.temp ?? 0;
+                  const deviceBattery = deviceData.battery ?? 0;
+                  
+                  return (
+                    <TouchableOpacity
+                      key={pet.pet_code}
+                      onPress={() => {
+                        (navigation as any).navigate('MonitoringDetail', {
+                          petCode: pet.pet_code,
+                          deviceMac: deviceMac,
+                          petName: pet.name,
+                        });
+                      }}
+                      style={styles.petDeviceCard}
+                      activeOpacity={0.85}>
+                      {/* 카드 헤더: 반려동물 이름 + 연결 상태 */}
+                      <View style={styles.petDeviceCardHeader}>
+                        <View style={styles.petDeviceCardHeaderLeft}>
+                          <Text style={styles.petDeviceCardTitle}>{pet.name}</Text>
+                          <View style={styles.connectionTypeBadge}>
+                            <Wifi 
+                              size={12} 
+                              color={connectionType === 'hub' ? '#2E8B7E' : connectionType === 'ble' ? '#4F46E5' : '#9CA3AF'} 
+                            />
+                            <Text style={[
+                              styles.connectionTypeText,
+                              {color: connectionType === 'hub' ? '#2E8B7E' : connectionType === 'ble' ? '#4F46E5' : '#9CA3AF'}
+                            ]}>
+                              {connectionType === 'hub' ? '허브 연결' : connectionType === 'ble' ? '스마트폰 연결' : '연결 안됨'}
+                            </Text>
+                          </View>
+                        </View>
+                        <ChevronRight size={20} color="#CCCCCC" />
+                      </View>
+                      
+                      {/* 데이터 그리드 */}
+                      <View style={styles.petDeviceDataGrid}>
+                        <View style={styles.petDeviceDataItem}>
+                          <Heart size={18} color="#F03F3F" />
+                          <Text style={styles.petDeviceDataLabel}>심박수</Text>
+                          <Text style={styles.petDeviceDataValue}>{deviceHr > 0 ? deviceHr : '--'}</Text>
+                          <Text style={styles.petDeviceDataUnit}>BPM</Text>
+                        </View>
+                        <View style={styles.petDeviceDataItem}>
+                          <Droplet size={18} color="#2E8B7E" />
+                          <Text style={styles.petDeviceDataLabel}>SpO2</Text>
+                          <Text style={styles.petDeviceDataValue}>{deviceSpo2 > 0 ? deviceSpo2 : '--'}</Text>
+                          <Text style={styles.petDeviceDataUnit}>%</Text>
+                        </View>
+                        <View style={styles.petDeviceDataItem}>
+                          <Thermometer size={18} color="#FFB02E" />
+                          <Text style={styles.petDeviceDataLabel}>체온</Text>
+                          <Text style={styles.petDeviceDataValue}>{deviceTemp > 0 ? deviceTemp.toFixed(1) : '--'}</Text>
+                          <Text style={styles.petDeviceDataUnit}>°C</Text>
+                        </View>
+                        <View style={styles.petDeviceDataItem}>
+                          <Battery size={18} color="#4F46E5" />
+                          <Text style={styles.petDeviceDataLabel}>배터리</Text>
+                          <Text style={styles.petDeviceDataValue}>{deviceBattery > 0 ? deviceBattery : '--'}</Text>
+                          <Text style={styles.petDeviceDataUnit}>%</Text>
+                        </View>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })
+              )}
+            </View>
+          </>
+        )}
+
       </ScrollView>
 
       {/* 펫 선택 모달 */}
@@ -1561,8 +1808,8 @@ const styles = StyleSheet.create({
   header: {
     backgroundColor: 'white',
     paddingHorizontal: 20,
-    paddingTop: 32,
-    paddingBottom: 20,
+    paddingTop: 16,
+    paddingBottom: 12,
     shadowColor: '#000',
     shadowOffset: {width: 0, height: 1},
     shadowOpacity: 0.05,
@@ -1570,7 +1817,7 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   headerTitle: {
-    fontSize: 22,
+    fontSize: 18,
     fontWeight: '700',
     color: '#111111',
     letterSpacing: -0.03,
@@ -1978,6 +2225,7 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     marginTop: 2,
   },
+<<<<<<< HEAD
   // ✅ 펫 선택 모달 스타일
   modalOverlay: {
     flex: 1,
@@ -2055,5 +2303,240 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 14,
     fontWeight: '600',
+=======
+  // ✅ 대시보드 스타일
+  statusSummaryCard: {
+    backgroundColor: 'white',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#f0f0f0',
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 1},
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  statusSummaryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+  },
+  statusSummaryItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  statusSummaryDivider: {
+    width: 1,
+    height: 40,
+    backgroundColor: '#E5E7EB',
+  },
+  statusSummaryLabel: {
+    fontSize: 11,
+    color: '#6B7280',
+    fontWeight: '600',
+    marginBottom: 6,
+  },
+  statusSummaryValueRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  statusSummaryValue: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  statusSummarySubtext: {
+    fontSize: 10,
+    color: '#9CA3AF',
+    fontWeight: '500',
+  },
+  emptyStateCard: {
+    backgroundColor: 'white',
+    borderRadius: 16,
+    padding: 32,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#f0f0f0',
+  },
+  emptyStateText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#111827',
+    marginBottom: 8,
+  },
+  emptyStateSubtext: {
+    fontSize: 13,
+    color: '#6B7280',
+    fontWeight: '500',
+  },
+  petDeviceCard: {
+    backgroundColor: 'white',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    padding: 16,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 1},
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  petDeviceCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  petDeviceCardHeaderLeft: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  petDeviceCardTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  connectionTypeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    backgroundColor: '#F9F9F9',
+  },
+  connectionTypeText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  petDeviceCardTime: {
+    fontSize: 11,
+    color: '#6B7280',
+    fontWeight: '500',
+    marginRight: 8,
+  },
+  petDeviceDataGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  petDeviceDataItem: {
+    flex: 1,
+    minWidth: '45%',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    backgroundColor: '#F9F9F9',
+    borderRadius: 12,
+  },
+  petDeviceDataLabel: {
+    fontSize: 11,
+    color: '#6B7280',
+    fontWeight: '600',
+    marginTop: 6,
+    marginBottom: 4,
+  },
+  petDeviceDataValue: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  petDeviceDataUnit: {
+    fontSize: 11,
+    color: '#9CA3AF',
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  initialStateCard: {
+    backgroundColor: 'white',
+    borderRadius: 16,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  initialStateTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  initialStateSubtitle: {
+    fontSize: 14,
+    color: '#6B7280',
+    fontWeight: '500',
+    textAlign: 'center',
+    marginBottom: 32,
+    lineHeight: 20,
+  },
+  initialStateButtons: {
+    gap: 16,
+  },
+  initialStateButton: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 16,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  initialStateButtonIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  initialStateButtonTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 6,
+  },
+  initialStateButtonSubtitle: {
+    fontSize: 13,
+    color: '#6B7280',
+    fontWeight: '500',
+    lineHeight: 18,
+  },
+  previewButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#f0663f',
+    backgroundColor: 'white',
+    marginTop: 8,
+  },
+  previewButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#f0663f',
+  },
+  backButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 12,
+  },
+  backButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#6B7280',
+>>>>>>> kms
   },
 });

@@ -37,7 +37,7 @@ export default function AppSettingsScreen({navigation}: {navigation: any}) {
           <Text style={styles.subtitle}>환경설정 및 권한 관리</Text>
         </View>
 
-        <View style={styles.section}>
+        {/* <View style={styles.section}>
           <Text style={styles.sectionTitle}>기능</Text>
 
           <View style={styles.row}>
@@ -64,7 +64,7 @@ export default function AppSettingsScreen({navigation}: {navigation: any}) {
                 <Sun size={20} color="#FFB02E" />
               </View>
               <View style={styles.rowText}>
-                <Text style={styles.rowTitle}>다크 모드</Text>
+                <Text style={styles.rowTitle}>다크 모드1</Text>
                 <Text style={styles.rowDesc}>화면 테마 설정 (준비중)</Text>
               </View>
             </View>
@@ -78,7 +78,7 @@ export default function AppSettingsScreen({navigation}: {navigation: any}) {
               }}
             />
           </View>
-        </View>
+        </View> */}
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>권한</Text>

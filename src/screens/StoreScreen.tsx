@@ -1,4 +1,5 @@
-import React, {useState, useEffect} from 'react';
+// 스토어 기능 임시 비활성화 - 나중에 사용 예정
+import React, {useState} from 'react';
 import {
   View,
   Text,
@@ -13,16 +14,17 @@ import {
   ShoppingCart,
   Truck,
   BadgeCheck,
-  Timer,
-  Sparkles,
   Eye,
+  Bone,
+  Cookie,
+  Package,
 } from 'lucide-react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
-import {notificationService} from '../services/NotificationService';
 import {useNavigation} from '@react-navigation/native';
 import {cartStore} from '../store/cartStore';
 import {ALL_PRODUCTS, Product} from '../constants/products';
+import {notificationService} from '../services/NotificationService';
 
 const allProducts: Product[] = ALL_PRODUCTS;
 
@@ -32,21 +34,21 @@ interface StoreScreenProps {
   petName?: string;
 }
 
-type TabType = 'home' | 'best' | 'deals' | 'ai';
+type TabType = 'all' | 'food' | 'snack' | 'supplies';
 
 export function StoreScreen({category, onAddToCart, petName}: StoreScreenProps) {
-  const [activeTab, setActiveTab] = useState<TabType>('home');
+  const [activeTab, setActiveTab] = useState<TabType>('all');
   const navigation = useNavigation<any>();
   const cartCount = cartStore(s => s.totalCount());
 
   const getFilteredProducts = () => {
     switch (activeTab) {
-      case 'best':
-        return allProducts.filter(p => p.category === 'best');
-      case 'deals':
-        return allProducts.filter(p => p.category === 'deal');
-      case 'ai':
-        return allProducts.filter(p => p.category === 'ai');
+      case 'food':
+        return allProducts.filter(p => p.category === 'food');
+      case 'snack':
+        return allProducts.filter(p => p.category === 'snack');
+      case 'supplies':
+        return allProducts.filter(p => p.category === 'supplies');
       default:
         return allProducts;
     }
@@ -70,18 +72,11 @@ export function StoreScreen({category, onAddToCart, petName}: StoreScreenProps) 
     );
   };
 
-  // 타임딜 상품 보기 시 알림
-  useEffect(() => {
-    if (activeTab === 'deals') {
-      notificationService.showTimeDeal('타임딜 상품', 50);
-    }
-  }, [activeTab]);
-
   const tabs = [
-    {id: 'home' as TabType, label: '홈', icon: null},
-    {id: 'best' as TabType, label: '베스트', icon: null},
-    {id: 'deals' as TabType, label: '타임딜', icon: Timer},
-    {id: 'ai' as TabType, label: 'AI맞춤', icon: Sparkles},
+    {id: 'all' as TabType, label: '전체', icon: null},
+    {id: 'food' as TabType, label: '사료', icon: Bone},
+    {id: 'snack' as TabType, label: '간식', icon: Cookie},
+    {id: 'supplies' as TabType, label: '용품', icon: Package},
   ];
 
   const renderProduct = ({item}: {item: Product}) => (
@@ -225,27 +220,11 @@ export function StoreScreen({category, onAddToCart, petName}: StoreScreenProps) 
         contentContainerStyle={styles.productsList}
         columnWrapperStyle={styles.productRow}
         ListHeaderComponent={
-          activeTab === 'home' ? (
+          activeTab === 'all' ? (
             <View style={styles.heroSection}>
               <View style={styles.heroCard}>
                 <Text style={styles.heroEmoji}>🐾</Text>
                 <Text style={styles.heroTitle}>{(petName || '우리 아이')}을(를) 위한 맞춤 추천</Text>
-              </View>
-            </View>
-          ) : activeTab === 'deals' ? (
-            <View style={styles.dealsBanner}>
-              <Timer size={32} color="white" />
-              <View>
-                <Text style={styles.dealsTitle}>오늘만 특가!</Text>
-                <Text style={styles.dealsSubtitle}>최대 50% 할인 진행중</Text>
-              </View>
-            </View>
-          ) : activeTab === 'ai' ? (
-            <View style={styles.aiBanner}>
-              <Sparkles size={32} color="white" />
-              <View>
-                <Text style={styles.aiTitle}>AI가 추천하는 상품</Text>
-                <Text style={styles.aiSubtitle}>건강 데이터 기반 맞춤 추천</Text>
               </View>
             </View>
           ) : null
@@ -535,59 +514,5 @@ const styles = StyleSheet.create({
     letterSpacing: -0.03,
     marginBottom: 2,
     flex: 1,
-  },
-  heroSubtitle: {
-    fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.9)',
-    fontWeight: '500',
-    letterSpacing: -0.03,
-  },
-  dealsBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    backgroundColor: '#FF4B4B',
-    borderRadius: 16,
-    padding: 20,
-    marginHorizontal: 16,
-    marginTop: 20,
-    marginBottom: 20,
-  },
-  dealsTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: 'white',
-    letterSpacing: -0.03,
-    marginBottom: 2,
-  },
-  dealsSubtitle: {
-    fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.9)',
-    fontWeight: '500',
-    letterSpacing: -0.03,
-  },
-  aiBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    backgroundColor: '#9B87F5',
-    borderRadius: 16,
-    padding: 20,
-    marginHorizontal: 16,
-    marginTop: 20,
-    marginBottom: 20,
-  },
-  aiTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: 'white',
-    letterSpacing: -0.03,
-    marginBottom: 2,
-  },
-  aiSubtitle: {
-    fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.9)',
-    fontWeight: '500',
-    letterSpacing: -0.03,
   },
 });

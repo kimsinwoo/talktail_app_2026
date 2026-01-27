@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(npx react-native run-android:*)",
-      "Bash(wmic logicaldisk:*)"
+      "Bash(wmic logicaldisk:*)",
+      "Bash(git checkout:*)"
     ]
   }
 }
