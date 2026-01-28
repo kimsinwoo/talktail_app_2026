@@ -73,6 +73,7 @@ import { DailyHealthCheckScreen } from './src/screens/DailyHealthCheckScreen';
 import { RecentStatusTrendScreen } from './src/screens/RecentStatusTrendScreen';
 import { HealthConsultationScreen } from './src/screens/HealthConsultationScreen';
 import { ImageGenerationScreen } from './src/screens/ImageGenerationScreen';
+import { CalendarScreen } from './src/screens/CalendarScreen';
 import { hasToken, saveConnectedDeviceId } from './src/utils/storage';
 import { apiService } from './src/services/ApiService';
 
@@ -130,6 +131,7 @@ export type RootStackParamList = {
   RecentStatusTrend: { petCode?: string; petName?: string } | undefined;
   HealthConsultation: { petCode?: string; petName?: string } | undefined;
   ImageGeneration: { petCode?: string; petName?: string } | undefined;
+  Calendar: { petCode?: string; petName?: string } | undefined;
 };
 
 const Tab = createBottomTabNavigator<TabParamList>();
@@ -675,6 +677,10 @@ function App(): React.JSX.Element {
             <Stack.Screen
               name="ImageGeneration"
               component={ImageGenerationScreen}
+            />
+            <Stack.Screen
+              name="Calendar"
+              component={CalendarScreen}
             />
           </Stack.Navigator>
         </NavigationContainer>
