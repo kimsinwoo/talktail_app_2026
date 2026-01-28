@@ -755,6 +755,59 @@ class HubBLEServiceIOS {
     }
   }
 
+  async sendCommand(peripheralId: string, command: string): Promise<void> {
+    console.log('[HubBLEService] 📤 sendCommand (iOS)', {
+      peripheralId,
+      command,
+    });
+
+    if (!this.txChar) {
+      throw new Error('TX characteristic not ready');
+    }
+
+    try {
+      const commandBytes = Buffer.from(command, 'utf8');
+      const base64 = commandBytes.toString('base64');
+
+      let writeRetries = 3;
+      let writeSuccess = false;
+      
+      while (writeRetries > 0 && !writeSuccess) {
+        try {
+          await this.txChar.writeWithResponse(base64);
+          writeSuccess = true;
+        } catch (e: any) {
+          writeRetries -= 1;
+          const isCancelled = e?.message?.includes('Operation was cancelled') || 
+                            e?.errorCode === 'OperationCancelled' ||
+                            (e?.name === 'BleError' && e?.message?.includes('cancelled'));
+          
+          if (isCancelled && writeRetries > 0) {
+            console.warn(`[HubBLEService] ⚠️ Write cancelled, retrying... (${writeRetries} left)`, {
+              peripheralId,
+              command,
+              error: e?.message,
+            });
+            await new Promise(resolve => setTimeout(resolve, 200));
+            continue;
+          }
+          throw e;
+        }
+      }
+
+      console.log('[HubBLEService] ✅ sendCommand OK (iOS)', {
+        peripheralId,
+        command,
+      });
+    } catch (e) {
+      this.logError('sendCommand failed', e, {
+        peripheralId,
+        command,
+      });
+      throw e;
+    }
+  }
+
   async disconnect(peripheralId: string) {
     try {
       if (this.notifySubscription) {

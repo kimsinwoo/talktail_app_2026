@@ -855,6 +855,52 @@ class HubBLEService {
     }
   }
 
+  async sendCommand(peripheralId: string, command: string): Promise<void> {
+    console.log('[HubBLEService] 📤 sendCommand (Android)', {
+      peripheralId,
+      command,
+    });
+
+    if (!this.resolvedServiceUuid || !this.resolvedTxUuid) {
+      throw new Error('Service or TX characteristic UUID not ready');
+    }
+
+    try {
+      const commandBytes = Array.from(Buffer.from(command, 'utf8'));
+      
+      try {
+        await BleManager.write(peripheralId, this.resolvedServiceUuid, this.resolvedTxUuid, commandBytes);
+        console.log('[HubBLEService] 📤 sendCommand (Android, withResponse)', {
+          peripheralId,
+          command,
+        });
+      } catch (e1) {
+        this.logError('sendCommand failed, retrying withoutResponse', e1, {
+          peripheralId,
+          command,
+        });
+        await (BleManager as any).writeWithoutResponse(peripheralId, this.resolvedServiceUuid, this.resolvedTxUuid, commandBytes);
+        console.log('[HubBLEService] 📤 sendCommand (Android, withoutResponse)', {
+          peripheralId,
+          command,
+        });
+      }
+
+      await new Promise<void>(resolve => setTimeout(resolve, 30));
+      
+      console.log('[HubBLEService] ✅ sendCommand OK (Android)', {
+        peripheralId,
+        command,
+      });
+    } catch (e) {
+      this.logError('sendCommand failed', e, {
+        peripheralId,
+        command,
+      });
+      throw e;
+    }
+  }
+
   private onDisconnectCallback: ((peripheralId: string) => void) | undefined = undefined;
 
   setOnDisconnectCallback(callback: (peripheralId: string) => void) {

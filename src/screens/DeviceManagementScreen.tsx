@@ -1,13 +1,8 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Animated,
-  DeviceEventEmitter,
   Easing,
-  Modal,
-  PermissionsAndroid,
-  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -15,7 +10,6 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import BleManager from 'react-native-ble-manager';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -27,6 +21,7 @@ import {
   Link2,
   Plus,
   Wifi,
+  Lock,
 } from 'lucide-react-native';
 import { BLEConnectionScreen } from './BLEConnectionScreen';
 import { apiService } from '../services/ApiService';
@@ -35,7 +30,6 @@ import { hubBleService, type HubBleCandidate } from '../services';
 import { hubSocketService } from '../services/HubSocketService';
 import { hubStatusStore } from '../store/hubStatusStore';
 import type { RootStackParamList } from '../../App';
-import WifiManager from 'react-native-wifi-reborn';
 import { getToken } from '../utils/storage';
 
 type Hub = { address: string; name: string; updatedAt?: string };
@@ -43,21 +37,6 @@ type ScreenMode = 'main' | 'hubProvision' | 'ble1to1';
 type HubProvisionStep = 'scan' | 'wifi' | 'waiting' | 'done';
 type HubCandidate = { id: string; name: string; rssi?: number };
 type HubDevice = { address: string; name: string; updatedAt?: string };
-
-const HUB_SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
-const HUB_CHAR_RX = '6e400003-b5a3-f393-e0a9-e50e24dcca9e'; // Notify
-const HUB_CHAR_TX = '6e400002-b5a3-f393-e0a9-e50e24dcca9e'; // Write
-
-// ✅ react-native-ble-manager는 네이티브 이벤트를 DeviceEventEmitter로도 수신 가능.
-// iOS(특히 Bridgeless)에서 `new NativeEventEmitter()` / `new NativeEventEmitter(NativeModule)` 이슈를 피하기 위해
-// 화면 레벨에서는 DeviceEventEmitter를 사용한다.
-const bleEmitter = DeviceEventEmitter;
-
-function normalizeHubName(raw: unknown) {
-  return typeof raw === 'string' && raw.trim().length > 0
-    ? raw.trim()
-    : 'Tailing Hub';
-}
 
 function extractHubIdFromMqttReady(payload: unknown): string | null {
   // ✅ payload가 문자열로 오는 케이스도 지원 (예: "message:.. mqtt ready")
@@ -92,20 +71,11 @@ export function DeviceManagementScreen() {
     Record<string, HubDevice[]>
   >({});
   // ✅ 전역 스토어에서 연결된 디바이스 구독 (실시간 업데이트)
-  const globalConnectedDevicesByHub = hubStatusStore(
+  // 참조 동일성 체크를 위해 직접 사용 (불필요한 state 제거)
+  const connectedDevicesByHub = hubStatusStore(
     state => state.connectedDevicesByHub,
   );
-  const [connectedDevicesByHub, setConnectedDevicesByHub] = useState<
-    Record<string, string[]>
-  >({});
 
-  // ✅ 전역 스토어의 연결된 디바이스 동기화
-  useEffect(() => {
-    setConnectedDevicesByHub(globalConnectedDevicesByHub);
-  }, [globalConnectedDevicesByHub]);
-
-  // ✅ 전역 허브 상태 스토어 사용 (hubStatusByHub는 제거)
-  const hubStatus = hubStatusStore(state => state.hubStatus);
   const [registerDraftsByHub, setRegisterDraftsByHub] = useState<
     Record<string, Record<string, string>>
   >({});
@@ -122,7 +92,6 @@ export function DeviceManagementScreen() {
   const [hubCandidates, setHubCandidates] = useState<HubCandidate[]>([]);
   const [selectedHub, setSelectedHub] = useState<HubCandidate | null>(null);
   const [hubConnectingId, setHubConnectingId] = useState<string | null>(null);
-  const [ssidList, setSsidList] = useState<string[]>([]);
   const [ssid, setSsid] = useState('');
   const [password, setPassword] = useState('');
   const [hubName, setHubName] = useState<string>(''); // ✅ 허브 이름
@@ -131,6 +100,16 @@ export function DeviceManagementScreen() {
   const [provisionStartedAt, setProvisionStartedAt] = useState<number | null>(
     null,
   );
+  
+  // Wi-Fi 목록 관련 state
+  type WiFiInfo = {
+    ssid: string;
+    rssi: number;
+    security: string;
+    isEncrypted: boolean;
+  };
+  const [wifiList, setWifiList] = useState<WiFiInfo[]>([]);
+  const [showPasswordInput, setShowPasswordInput] = useState(false);
 
   const subsRef = useRef<Array<{ remove: () => void }>>([]);
   const mqttReadyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
@@ -191,13 +170,14 @@ export function DeviceManagementScreen() {
     setHubCandidates([]);
     setSelectedHub(null);
     setHubConnectingId(null);
-    setSsidList([]);
     setSsid('');
     setPassword('');
     setHubName(''); // ✅ 허브 이름 초기화
     setDebugText('');
     setIsProvisionDone(false);
     setProvisionStartedAt(null);
+    setWifiList([]);
+    setShowPasswordInput(false);
     if (mqttReadyTimeoutRef.current) {
       clearTimeout(mqttReadyTimeoutRef.current);
       mqttReadyTimeoutRef.current = null;
@@ -286,7 +266,7 @@ export function DeviceManagementScreen() {
     return connected.includes(deviceMac);
   };
 
-  const deleteDevice = async (hubAddress: string, mac: string) => {
+  const deleteDevice = useCallback(async (hubAddress: string, mac: string) => {
     try {
       await apiService.delete<{ success: boolean; message: string }>(
         `/device/${encodeURIComponent(mac)}`,
@@ -305,9 +285,9 @@ export function DeviceManagementScreen() {
         position: 'bottom',
       });
     }
-  };
+  }, []);
 
-  const deleteHub = async (hubAddress: string) => {
+  const deleteHub = useCallback(async (hubAddress: string) => {
     try {
       await apiService.delete<{
         success: boolean;
@@ -321,11 +301,6 @@ export function DeviceManagementScreen() {
       });
       setHubs(prev => prev.filter(h => h.address !== hubAddress));
       setHubDevicesByHub(prev => {
-        const next = { ...prev };
-        delete next[hubAddress];
-        return next;
-      });
-      setConnectedDevicesByHub(prev => {
         const next = { ...prev };
         delete next[hubAddress];
         return next;
@@ -354,9 +329,9 @@ export function DeviceManagementScreen() {
         position: 'bottom',
       });
     }
-  };
+  }, []);
 
-  const ensureDraftsForHubMacs = (hubAddress: string, macs: string[]) => {
+  const ensureDraftsForHubMacs = useCallback((hubAddress: string, macs: string[]) => {
     setRegisterDraftsByHub(prev => {
       const current = prev[hubAddress] || {};
       const next = { ...current };
@@ -367,24 +342,24 @@ export function DeviceManagementScreen() {
       }
       return { ...prev, [hubAddress]: next };
     });
-  };
+  }, []);
 
-  const toggleMacSelection = (hubAddress: string, mac: string) => {
+  const toggleMacSelection = useCallback((hubAddress: string, mac: string) => {
     setSelectedMacsByHub(prev => {
       const current = prev[hubAddress] || {};
       const next = { ...current, [mac]: !current[mac] };
       return { ...prev, [hubAddress]: next };
     });
-  };
+  }, []);
 
-  const setDraftName = (hubAddress: string, mac: string, name: string) => {
+  const setDraftName = useCallback((hubAddress: string, mac: string, name: string) => {
     setRegisterDraftsByHub(prev => {
       const current = prev[hubAddress] || {};
       return { ...prev, [hubAddress]: { ...current, [mac]: name } };
     });
-  };
+  }, []);
 
-  const createOrUpdateDeviceInDb = async (
+  const createOrUpdateDeviceInDb = useCallback(async (
     hubAddress: string,
     mac: string,
     name: string,
@@ -414,9 +389,9 @@ export function DeviceManagementScreen() {
         return { ok: false as const };
       }
     }
-  };
+  }, []);
 
-  const registerSelectedDevices = async (hubAddress: string) => {
+  const registerSelectedDevices = useCallback(async (hubAddress: string) => {
     const selected = selectedMacsByHub[hubAddress] || {};
     const drafts = registerDraftsByHub[hubAddress] || {};
     const macs = Object.keys(selected).filter(m => !!selected[m]);
@@ -456,9 +431,9 @@ export function DeviceManagementScreen() {
       text2: '서버/네트워크를 확인해주세요.',
       position: 'bottom',
     });
-  };
+  }, []);
 
-  const sendBlink = async (hubAddress: string, mac: string) => {
+  const sendBlink = useCallback(async (hubAddress: string, mac: string) => {
     try {
       await hubSocketService.connect();
       const requestId = `blink_${hubAddress}_${mac}_${Date.now()}`;
@@ -482,9 +457,9 @@ export function DeviceManagementScreen() {
         position: 'bottom',
       });
     }
-  };
+  }, []);
 
-  const requestConnectedDevices = async (hubAddress: string) => {
+  const requestConnectedDevices = useCallback(async (hubAddress: string) => {
     setIsSearchingByHub(prev => ({ ...prev, [hubAddress]: true }));
     try {
       await hubSocketService.connect();
@@ -511,7 +486,7 @@ export function DeviceManagementScreen() {
         setIsSearchingByHub(prev => ({ ...prev, [hubAddress]: false }));
       }, 20000);
     }
-  };
+  }, []);
 
   useEffect(() => {
     refreshHubs().catch(() => {});
@@ -557,9 +532,6 @@ export function DeviceManagementScreen() {
       const hubAddress = String(
         payload?.hubAddress || payload?.hubId || payload?.hub_address || '',
       );
-      const list = Array.isArray(payload?.connected_devices)
-        ? payload.connected_devices
-        : [];
       if (!hubAddress) return;
       // ✅ 전역 스토어에서 최신 연결된 디바이스 목록 가져오기
       const latestDevices = hubStatusStore
@@ -572,10 +544,7 @@ export function DeviceManagementScreen() {
       const filteredDevices = latestDevices.filter(mac =>
         registeredDevices.includes(mac),
       );
-      setConnectedDevicesByHub(prev => ({
-        ...prev,
-        [hubAddress]: filteredDevices,
-      }));
+      // ✅ 전역 스토어에서 직접 사용하므로 로컬 state 업데이트 불필요
       ensureDraftsForHubMacs(hubAddress, filteredDevices);
       refreshHubDevices(hubAddress).catch(() => {});
       setIsSearchingByHub(prev => ({ ...prev, [hubAddress]: false }));
@@ -618,12 +587,13 @@ export function DeviceManagementScreen() {
     setHubCandidates([]);
     setSelectedHub(null);
     setHubConnectingId(null);
-    setSsidList([]);
     setSsid('');
     setPassword('');
     setDebugText('');
     setIsProvisionDone(false);
     setProvisionStartedAt(null);
+    setWifiList([]);
+    setShowPasswordInput(false);
     if (mqttReadyTimeoutRef.current) {
       clearTimeout(mqttReadyTimeoutRef.current);
       mqttReadyTimeoutRef.current = null;
@@ -728,6 +698,7 @@ export function DeviceManagementScreen() {
       ).catch(() => {});
       // #endregion
       await hubBleService.startNotifications(candidate.id, (line: string) => {
+        console.log('[DeviceManagementScreen] 📥 BLE 수신:', line);
         const lower = String(line || '')
           .trim()
           .toLowerCase();
@@ -768,15 +739,50 @@ export function DeviceManagementScreen() {
           }
           return;
         }
-        // (허브가 Wi‑Fi 목록 등을 보낼 수도 있으니 대응)
-        if (typeof line === 'string' && line.startsWith('ssid:')) {
-          const m = line.match(/ssid:\s*\[(.*?)\]/);
-          if (m && typeof m[1] === 'string') {
-            const list =
-              m[1].match(/"([^"]+)"/g)?.map(x => x.replace(/"/g, '')) || [];
-            setSsidList(list);
-            setDebugText(`Wi-Fi 목록 수신 (${list.length})`);
+        
+        // ✅ wifi_list: 형식 파싱 (SSID|RSSI|SECURITY,SSID|RSSI|SECURITY,...)
+        if (typeof line === 'string' && line.startsWith('wifi_list:')) {
+          console.log('[DeviceManagementScreen] 📥 wifi_list 수신:', line);
+          const wifiListStr = line.replace('wifi_list:', '').trim();
+          const wifiItems = wifiListStr.split(',').filter(item => item.trim().length > 0);
+          
+          const parsedWifiList: WiFiInfo[] = [];
+          
+          for (const item of wifiItems) {
+            const parts = item.split('|');
+            if (parts.length >= 3) {
+              const ssid = parts[0].trim();
+              const rssi = parseInt(parts[1].trim(), 10);
+              const security = parts[2].trim();
+              
+              // 필터링: DIRECT-로 시작하는 것 제외 (프린트 기기)
+              if (ssid.startsWith('DIRECT-')) {
+                continue;
+              }
+              
+              // 필터링: RSSI가 -80 이하인 것 제외
+              if (isNaN(rssi) || rssi < -80) {
+                continue;
+              }
+              
+              // 암호화 여부 확인 (OPEN이 아니면 암호화됨)
+              const isEncrypted = security !== 'OPEN';
+              
+              parsedWifiList.push({
+                ssid,
+                rssi,
+                security,
+                isEncrypted,
+              });
+            }
           }
+          
+          // RSSI 기준으로 정렬 (강한 신호부터)
+          parsedWifiList.sort((a, b) => b.rssi - a.rssi);
+          
+          setWifiList(parsedWifiList);
+          setDebugText(`Wi-Fi 목록 수신 (${parsedWifiList.length}개)`);
+          console.log('[DeviceManagementScreen] ✅ Wi-Fi 목록 파싱 완료:', parsedWifiList);
         }
       });
 
@@ -805,7 +811,19 @@ export function DeviceManagementScreen() {
       ).catch(() => {});
       // #endregion
       setHubStep('wifi');
-      setDebugText('허브 BLE 연결 완료');
+      setDebugText('허브 BLE 연결 완료. Wi‑Fi 스캔 중...');
+      
+      // ✅ BLE로 scan:wifi 명령 자동 전송 (연결 직후)
+      setTimeout(async () => {
+        try {
+          await hubBleService.sendCommand(candidate.id, 'scan:wifi');
+          setDebugText('Wi‑Fi 스캔 명령 전송 완료. 목록 수신 대기 중...');
+          console.log('[DeviceManagementScreen] ✅ scan:wifi 명령 전송 완료');
+        } catch (e) {
+          console.error('[DeviceManagementScreen] ❌ Wi‑Fi 스캔 명령 전송 실패:', e);
+          setDebugText('Wi‑Fi 스캔 명령 전송 실패.');
+        }
+      }, 500);
     } catch (e: any) {
       // #region agent log
       fetch(
@@ -842,46 +860,6 @@ export function DeviceManagementScreen() {
     }
   };
 
-  const requestWifiListFromPhone = async () => {
-    try {
-      setDebugText('주변 Wi‑Fi 검색 중…');
-
-      // iOS는 주변 Wi‑Fi 스캔이 OS 정책상 제한이 많아서 SSID 직접 입력으로 폴백
-      if (Platform.OS === 'ios') {
-        setSsidList([]);
-        setDebugText(
-          'iOS에서는 주변 Wi‑Fi 목록 조회가 제한됩니다. SSID를 직접 입력해주세요.',
-        );
-        return;
-      }
-
-      // Android: react-native-wifi-reborn 사용
-      const result = await WifiManager.loadWifiList();
-      const parsed: Array<{ SSID?: unknown }> = Array.isArray(result)
-        ? (result as Array<{ SSID?: unknown }>)
-        : typeof result === 'string'
-        ? (JSON.parse(result) as Array<{ SSID?: unknown }>)
-        : [];
-
-      const ssids = parsed
-        .map(x => (typeof x?.SSID === 'string' ? x.SSID.trim() : ''))
-        .filter(s => s.length > 0);
-      // 중복 제거
-      const uniq = Array.from(new Set(ssids));
-      setSsidList(uniq);
-      setDebugText(`주변 Wi‑Fi 검색 완료 (${uniq.length})`);
-    } catch (e: any) {
-      Toast.show({
-        type: 'error',
-        text1: 'Wi‑Fi 목록 조회 실패',
-        text2:
-          e?.message ||
-          '주변 Wi‑Fi 목록을 가져올 수 없습니다. (Android는 위치 권한/위치 활성화가 필요할 수 있습니다)',
-        position: 'bottom',
-      });
-    }
-  };
-
   const registerHubToBackend = async (hubId: string, name?: string) => {
     try {
       // ✅ 이름이 지정되지 않았으면 기본값 사용
@@ -906,7 +884,7 @@ export function DeviceManagementScreen() {
     }
   };
 
-  const sendWifiConfigToHub = async () => {
+  const sendWifiConfigToHub = useCallback(async () => {
     // #region agent log
     fetch('http://127.0.0.1:7244/ingest/3eff9cd6-dca3-41a1-a9e7-4063579704a1', {
       method: 'POST',
@@ -1096,7 +1074,26 @@ export function DeviceManagementScreen() {
         position: 'bottom',
       });
     }
-  };
+  }, [selectedHub, ssid, password, hubName, isProvisionDone, provisionStartedAt]);
+
+  // Wi‑Fi 선택 처리
+  const handleWifiSelect = useCallback((wifi: WiFiInfo) => {
+    setSsid(wifi.ssid);
+    
+    // 암호화되지 않은 Wi-Fi는 비밀번호 입력 불필요, 자동으로 전송
+    if (!wifi.isEncrypted) {
+      setPassword('');
+      setShowPasswordInput(false);
+      // 자동으로 Wi-Fi 설정 전송
+      setTimeout(() => {
+        sendWifiConfigToHub();
+      }, 300);
+    } else {
+      // 암호화된 Wi-Fi는 비밀번호 입력 필요
+      setPassword('');
+      setShowPasswordInput(true);
+    }
+  }, [sendWifiConfigToHub]);
 
   const stepIndex =
     hubStep === 'scan'
@@ -1500,89 +1497,108 @@ export function DeviceManagementScreen() {
                 </View>
 
                 <View style={{ marginTop: 12 }}>
-                  <Text style={styles.label}>허브 이름</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={hubName}
-                    onChangeText={setHubName}
-                    placeholder="허브 이름을 입력하세요 (예: 거실 허브)"
-                    placeholderTextColor="#999999"
-                    maxLength={50}
-                  />
-                  <Text style={[styles.cardSubtle, { marginTop: 4 }]}>
-                    이름을 지정하지 않으면 "Tailing Hub"로 등록됩니다.
-                  </Text>
-                </View>
-
-                <View style={{ marginTop: 12 }}>
                   <View style={styles.rowBetween}>
-                    <Text style={styles.label}>
-                      주변 Wi‑Fi 목록(휴대폰 기준)
-                    </Text>
-                    <TouchableOpacity
-                      onPress={requestWifiListFromPhone}
-                      style={styles.smallGhostButton}
-                      activeOpacity={0.8}
-                    >
-                      <Wifi size={16} color="#f0663f" />
-                      <Text style={styles.smallGhostButtonText}>
-                        목록 가져오기
+                    <Text style={styles.label}>Wi‑Fi 목록</Text>
+                    {wifiList.length > 0 && (
+                      <Text style={{ fontSize: 12, color: '#2E8B7E', fontWeight: '600' }}>
+                        {wifiList.length}개 발견
                       </Text>
-                    </TouchableOpacity>
+                    )}
                   </View>
-
-                  {ssidList.length > 0 ? (
-                    <View style={styles.ssidWrap}>
-                      {ssidList.map(s => (
-                        <TouchableOpacity
-                          key={s}
-                          style={[
-                            styles.ssidChip,
-                            ssid === s ? styles.ssidChipActive : null,
-                          ]}
-                          onPress={() => setSsid(s)}
-                          activeOpacity={0.85}
-                        >
-                          <Text
-                            style={[
-                              styles.ssidText,
-                              ssid === s ? styles.ssidTextActive : null,
-                            ]}
+                  
+                  {wifiList.length > 0 ? (
+                    <View style={{
+                      maxHeight: wifiList.length <= 8 ? undefined : 320,
+                      marginTop: 8,
+                      marginBottom: 8,
+                    }}>
+                      <ScrollView
+                        style={wifiList.length > 8 ? { maxHeight: 320 } : undefined}
+                        nestedScrollEnabled={true}
+                        showsVerticalScrollIndicator={wifiList.length > 8}
+                      >
+                        {wifiList.map((wifi, index) => (
+                          <TouchableOpacity
+                            key={index}
+                            style={{
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              padding: 12,
+                              backgroundColor: ssid === wifi.ssid ? '#E7F5F4' : '#F9F9F9',
+                              borderRadius: 8,
+                              marginBottom: 4,
+                              borderWidth: 1,
+                              borderColor: ssid === wifi.ssid ? '#2E8B7E' : '#E0E0E0',
+                            }}
+                            onPress={() => handleWifiSelect(wifi)}
+                            activeOpacity={0.7}
                           >
-                            {s}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
+                            {wifi.isEncrypted ? (
+                              <Lock size={16} color={ssid === wifi.ssid ? '#2E8B7E' : '#666'} style={{ marginRight: 8 }} />
+                            ) : (
+                              <Wifi size={16} color={ssid === wifi.ssid ? '#2E8B7E' : '#666'} style={{ marginRight: 8 }} />
+                            )}
+                            <View style={{ flex: 1 }}>
+                              <Text style={{ fontSize: 14, color: '#111', fontWeight: ssid === wifi.ssid ? '600' : '400' }}>
+                                {wifi.ssid}
+                              </Text>
+                              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4, gap: 4 }}>
+                                {/* 신호 강도 표시 */}
+                                <View style={{ flexDirection: 'row', gap: 2, marginRight: 4 }}>
+                                  {(() => {
+                                    const rssi = wifi.rssi;
+                                    let signalBars = 0;
+                                    
+                                    if (rssi >= -65) {
+                                      signalBars = 4; // 모든 칸
+                                    } else if (rssi >= -75) {
+                                      signalBars = 3; // 3칸
+                                    } else if (rssi >= -80) {
+                                      signalBars = 2; // 2칸
+                                    } else {
+                                      signalBars = 0; // 표시 안함 (이미 필터링됨)
+                                    }
+                                    
+                                    return [1, 2, 3, 4].map((bar) => (
+                                      <View
+                                        key={bar}
+                                        style={{
+                                          width: 3,
+                                          height: bar === 1 ? 4 : bar === 2 ? 6 : bar === 3 ? 8 : 10,
+                                          backgroundColor: bar <= signalBars ? '#2E8B7E' : '#E0E0E0',
+                                          borderRadius: 1.5,
+                                        }}
+                                      />
+                                    ));
+                                  })()}
+                                </View>
+                                <Text style={{ fontSize: 11, color: '#888' }}>
+                                  {wifi.rssi} dBm
+                                </Text>
+                              </View>
+                            </View>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
                     </View>
                   ) : (
-                    <Text style={[styles.cardSubtle, { marginTop: 6 }]}>
-                      (iOS는 목록 조회 제한이 있어 SSID 직접 입력을 권장합니다)
-                    </Text>
+ <></>
                   )}
                 </View>
 
-                <View style={{ marginTop: 12 }}>
-                  <Text style={styles.label}>Wi-Fi 이름(SSID)</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={ssid}
-                    onChangeText={setSsid}
-                    placeholder="SSID를 입력하거나 위 목록에서 선택"
-                    placeholderTextColor="#999999"
-                  />
-                </View>
-
-                <View style={{ marginTop: 12 }}>
-                  <Text style={styles.label}>비밀번호(없으면 비워두세요)</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={password}
-                    onChangeText={setPassword}
-                    placeholder="비밀번호"
-                    placeholderTextColor="#999999"
-                    secureTextEntry
-                  />
-                </View>
+                {showPasswordInput && (
+                  <View style={{ marginTop: 12 }}>
+                    <Text style={styles.label}>비밀번호 *</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={password}
+                      onChangeText={setPassword}
+                      placeholder="Wi-Fi 비밀번호를 입력하세요"
+                      placeholderTextColor="#999999"
+                      secureTextEntry
+                    />
+                  </View>
+                )}
 
                 {!!debugText && (
                   <Text style={[styles.cardSubtle, { marginTop: 10 }]}>
@@ -1590,15 +1606,17 @@ export function DeviceManagementScreen() {
                   </Text>
                 )}
 
-                <TouchableOpacity
-                  style={[styles.primaryButton, { marginTop: 14 }]}
-                  onPress={sendWifiConfigToHub}
-                  activeOpacity={0.85}
-                >
-                  <Text style={styles.primaryButtonText}>
-                    Wi-Fi 정보 보내기
-                  </Text>
-                </TouchableOpacity>
+                {ssid && (showPasswordInput ? password.trim().length > 0 : true) && (
+                  <TouchableOpacity
+                    style={[styles.primaryButton, { marginTop: 14 }]}
+                    onPress={sendWifiConfigToHub}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={styles.primaryButtonText}>
+                      허브 등록 시작
+                    </Text>
+                  </TouchableOpacity>
+                )}
               </View>
             )}
 

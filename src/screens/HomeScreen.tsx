@@ -1,4 +1,4 @@
-import React, {useState, useEffect, useRef, useMemo} from 'react';
+import React, {useState, useEffect, useRef, useMemo, useCallback} from 'react';
 import {
   View,
   Text,
@@ -36,8 +36,9 @@ import {
 } from 'lucide-react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
-import {useNavigation} from '@react-navigation/native';
+import {useNavigation, useFocusEffect} from '@react-navigation/native';
 import type {Pet as RegisteredPet} from '../store/userStore';
+import {hubStatusStore} from '../store/hubStatusStore';
 
 interface HomeScreenProps {
   pets: RegisteredPet[];
@@ -62,6 +63,10 @@ export function HomeScreen({
   const navigation = useNavigation<any>();
   const petFlatListRef = useRef<FlatList>(null);
   const petDependentSectionRef = useRef<FlatList>(null);
+  
+  // 허브 목록 가져오기 (메모이제이션)
+  const hubs = hubStatusStore(state => state.hubs);
+  const hasHub = useMemo(() => hubs.length > 0, [hubs.length]);
 
   // 더미데이터: 3마리 반려동물 추가 (실제 pets 배열이 3마리 미만일 경우)
   const displayPets = useMemo(() => {
@@ -132,16 +137,18 @@ export function HomeScreen({
     }
   }, [selectedPetCode, displayPets]);
 
-  const navigateTo = (routeName: string, params?: Record<string, unknown>) => {
+  const navigateTo = useCallback((routeName: string, params?: Record<string, unknown>) => {
     const parent = navigation.getParent ? navigation.getParent() : null;
     const nav = parent ?? navigation;
     if (params) nav.navigate(routeName, params);
     else nav.navigate(routeName);
-  };
+  }, [navigation]);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
-    await new Promise(resolve => setTimeout(resolve, 1500));
+    // 허브 목록 새로고침
+    await hubStatusStore.getState().refreshHubs(true);
+    await new Promise<void>(resolve => setTimeout(() => resolve(), 1500));
     setIsRefreshing(false);
     Toast.show({
       type: 'success',
@@ -150,8 +157,16 @@ export function HomeScreen({
     });
   };
 
+  // 화면이 포커스될 때마다 허브 목록 새로고침
+  useFocusEffect(
+    React.useCallback(() => {
+      // 허브 목록 강제 새로고침 (캐시 무시)
+      hubStatusStore.getState().refreshHubs(true).catch(() => {});
+    }, []),
+  );
+
   // 반려동물 슬라이드 변경 핸들러
-  const handlePetHeroScroll = (event: any) => {
+  const handlePetHeroScroll = useCallback((event: any) => {
     const offsetX = event.nativeEvent.contentOffset.x;
     const index = Math.round(offsetX / SCREEN_WIDTH);
     if (index >= 0 && index < displayPets.length && index !== currentPetIndex) {
@@ -162,9 +177,9 @@ export function HomeScreen({
         petDependentSectionRef.current?.scrollToIndex({index, animated: true});
       }
     }
-  };
+  }, [displayPets, currentPetIndex, onSelectPet]);
 
-  const handlePetDependentScroll = (event: any) => {
+  const handlePetDependentScroll = useCallback((event: any) => {
     const offsetX = event.nativeEvent.contentOffset.x;
     const index = Math.round(offsetX / SCREEN_WIDTH);
     if (index >= 0 && index < displayPets.length && index !== currentPetIndex) {
@@ -175,9 +190,9 @@ export function HomeScreen({
         petFlatListRef.current?.scrollToIndex({index, animated: true});
       }
     }
-  };
+  }, [displayPets, currentPetIndex, onSelectPet]);
 
-  const handleSlideLeft = () => {
+  const handleSlideLeft = useCallback(() => {
     if (currentPetIndex > 0) {
       const newIndex = currentPetIndex - 1;
       setCurrentPetIndex(newIndex);
@@ -191,9 +206,9 @@ export function HomeScreen({
         petDependentSectionRef.current?.scrollToIndex({index: newIndex, animated: true});
       }
     }
-  };
+  }, [currentPetIndex, displayPets, onSelectPet]);
 
-  const handleSlideRight = () => {
+  const handleSlideRight = useCallback(() => {
     if (currentPetIndex < displayPets.length - 1) {
       const newIndex = currentPetIndex + 1;
       setCurrentPetIndex(newIndex);
@@ -207,7 +222,7 @@ export function HomeScreen({
         petDependentSectionRef.current?.scrollToIndex({index: newIndex, animated: true});
       }
     }
-  };
+  }, [currentPetIndex, displayPets, onSelectPet]);
 
   // 날씨 정보 (모의 데이터)
   const weatherInfo = {
@@ -285,7 +300,7 @@ export function HomeScreen({
   }, [currentPet, petDependentData]);
 
   // 상태 아이콘 렌더링
-  const renderStatusIcon = (icon: 'up' | 'down' | 'minus' | 'alert') => {
+  const renderStatusIcon = useCallback((icon: 'up' | 'down' | 'minus' | 'alert') => {
     switch (icon) {
       case 'up':
         return <TrendingUp size={16} color="#2E8B7E" />;
@@ -296,7 +311,7 @@ export function HomeScreen({
       case 'alert':
         return <AlertCircle size={16} color="#FFB02E" />;
     }
-  };
+  }, []);
 
   if (petsLoading) {
     return (
@@ -353,6 +368,41 @@ export function HomeScreen({
               <View style={styles.notificationBadge} />
             </TouchableOpacity>
           </View>
+          {/* 날씨 정보 (클릭 가능) */}
+          <TouchableOpacity
+            style={styles.weatherHeaderSection}
+            activeOpacity={0.7}
+            onPress={() => setIsWeatherExpanded(!isWeatherExpanded)}>
+            <View style={styles.weatherHeaderContent}>
+              <View style={styles.weatherIconContainer}>
+                <Cloud size={16} color="#2E8B7E" />
+              </View>
+              <View style={styles.weatherHeaderTextWrapper}>
+                {!isWeatherExpanded ? (
+                  <View style={styles.weatherHeaderTextContainer}>
+                    <Text style={styles.weatherHeaderText}>{weatherInfo.summary}</Text>
+                    <Text style={styles.weatherHeaderHint}>탭하여 자세히 보기</Text>
+                  </View>
+                ) : (
+                  <View style={styles.weatherHeaderDetails}>
+                    <Text style={styles.weatherHeaderDetailText}>
+                      온도 {weatherInfo.temperature}°C • 습도 {weatherInfo.humidity}% • 풍속 {weatherInfo.windSpeed}m/s
+                    </Text>
+                    <Text style={styles.weatherHeaderDetailText}>
+                      PM10: {weatherInfo.pm10} / PM2.5: {weatherInfo.pm25}
+                    </Text>
+                  </View>
+                )}
+              </View>
+              <View style={styles.weatherChevronContainer}>
+                {isWeatherExpanded ? (
+                  <ChevronUp size={20} color="#2E8B7E" strokeWidth={3.2} />
+                ) : (
+                  <ChevronDown size={20} color="#2E8B7E" strokeWidth={3.2} />
+                )}
+              </View>
+            </View>
+          </TouchableOpacity>
         </View>
 
         {/* 반려동물 프로필 영역 (슬라이드 가능) */}
@@ -366,8 +416,12 @@ export function HomeScreen({
             onMomentumScrollEnd={handlePetHeroScroll}
             keyExtractor={item => item.pet_code}
             scrollEnabled={true}
+            removeClippedSubviews={true}
+            maxToRenderPerBatch={3}
+            windowSize={5}
+            initialNumToRender={2}
             onScrollToIndexFailed={(info) => {
-              const wait = new Promise(resolve => setTimeout(resolve, 500));
+              const wait = new Promise<void>(resolve => setTimeout(() => resolve(), 500));
               wait.then(() => {
                 petFlatListRef.current?.scrollToIndex({ index: info.index, animated: true });
               });
@@ -459,6 +513,10 @@ export function HomeScreen({
             showsHorizontalScrollIndicator={false}
             onMomentumScrollEnd={handlePetDependentScroll}
             keyExtractor={item => item.pet_code}
+            removeClippedSubviews={true}
+            maxToRenderPerBatch={3}
+            windowSize={5}
+            initialNumToRender={2}
             renderItem={({item: pet}) => {
               const petData = petDependentData[pet.pet_code];
               const dailyCheck = petData?.dailyCheck || {completed: false};
@@ -532,7 +590,35 @@ export function HomeScreen({
                     </View>
                   </TouchableOpacity>
 
-                  {/* 핵심 카드 2: 다이어리 */}
+                  {/* 핵심 카드 2: 웨어러블 (허브가 있을 때만 큰 카드로 표시) */}
+                  {hasHub && (
+                    <TouchableOpacity
+                      style={styles.coreCard}
+                      activeOpacity={0.85}
+                      onPress={() => {
+                        (navigation as any).navigate('DeviceManagement');
+                      }}>
+                      <View style={styles.coreCardHeader}>
+                        <View style={[styles.coreCardIcon, {backgroundColor: '#E7F5F4'}]}>
+                          <Activity size={20} color="#2E8B7E" />
+                        </View>
+                        <View style={styles.coreCardContent}>
+                          <Text style={styles.coreCardTitle}>웨어러블 모니터링</Text>
+                          <Text style={styles.coreCardSubtitle}>
+                            {hubs.length}개의 허브가 연결되어 있어요
+                          </Text>
+                        </View>
+                      </View>
+                      <View style={styles.coreCardFooter}>
+                        <Text style={[styles.coreCardButton, {color: '#2E8B7E'}]}>
+                          디바이스 관리하기
+                        </Text>
+                        <ChevronRight size={18} color="#2E8B7E" />
+                      </View>
+                    </TouchableOpacity>
+                  )}
+
+                  {/* 핵심 카드 3: 다이어리 */}
                   <TouchableOpacity
                     style={styles.coreCard}
                     activeOpacity={0.85}
@@ -571,7 +657,7 @@ export function HomeScreen({
                     </View>
                   </TouchableOpacity>
 
-                  {/* 핵심 카드 3: 최근 상태 흐름 요약 */}
+                  {/* 핵심 카드 4: 최근 상태 흐름 요약 */}
                   {recentTrend.message && (
                     <TouchableOpacity
                       style={styles.trendCard}
@@ -608,67 +694,23 @@ export function HomeScreen({
           />
         </View>
 
-        {/* 보조 카드: 날씨 & 산책 정보 */}
+        {/* 서비스 아이콘 그리드 */}
         <View style={styles.section}>
-          <TouchableOpacity
-            style={styles.weatherCard}
-            activeOpacity={0.8}
-            onPress={() => setIsWeatherExpanded(!isWeatherExpanded)}>
-            <View style={styles.weatherCardHeader}>
-              <View style={styles.weatherHeaderLeft}>
-                <Cloud size={18} color="#2E8B7E" />
-                <Text style={styles.weatherSummary}>{weatherInfo.summary}</Text>
-              </View>
-              {isWeatherExpanded ? (
-                <ChevronUp size={18} color="#888888" />
-              ) : (
-                <ChevronDown size={18} color="#888888" />
-              )}
-            </View>
-            {isWeatherExpanded && (
-              <View style={styles.weatherExpandedContent}>
-                <View style={styles.weatherDetailRow}>
-                  <Text style={styles.weatherDetailLabel}>온도</Text>
-                  <Text style={styles.weatherDetailValue}>
-                    {weatherInfo.temperature}°C
-                  </Text>
-                </View>
-                <View style={styles.weatherDetailRow}>
-                  <Text style={styles.weatherDetailLabel}>습도</Text>
-                  <Text style={styles.weatherDetailValue}>
-                    {weatherInfo.humidity}%
-                  </Text>
-                </View>
-                <View style={styles.weatherDetailRow}>
-                  <Text style={styles.weatherDetailLabel}>풍속</Text>
-                  <Text style={styles.weatherDetailValue}>
-                    {weatherInfo.windSpeed}m/s
-                  </Text>
-                </View>
-                <View style={styles.weatherDetailRow}>
-                  <Text style={styles.weatherDetailLabel}>미세먼지</Text>
-                  <Text style={styles.weatherDetailValue}>
-                    PM10: {weatherInfo.pm10} / PM2.5: {weatherInfo.pm25}
-                  </Text>
-                </View>
-              </View>
-            )}
-          </TouchableOpacity>
-
-          {/* 서비스 아이콘 그리드 */}
           <View style={styles.serviceGrid}>
-            {/* 웨어러블 모니터링 */}
-            <TouchableOpacity
-              style={styles.serviceIconCard}
-              activeOpacity={0.85}
-              onPress={() => {
-                (navigation as any).navigate('DeviceManagement');
-              }}>
-              <View style={[styles.serviceIconContainer, {backgroundColor: '#E7F5F4'}]}>
-                <Activity size={24} color="#2E8B7E" />
-              </View>
-              <Text style={styles.serviceIconTitle}>웨어러블</Text>
-            </TouchableOpacity>
+            {/* 웨어러블 모니터링 (허브가 없을 때만 작은 아이콘으로 표시) */}
+            {!hasHub && (
+              <TouchableOpacity
+                style={styles.serviceIconCard}
+                activeOpacity={0.85}
+                onPress={() => {
+                  (navigation as any).navigate('DeviceManagement');
+                }}>
+                <View style={[styles.serviceIconContainer, {backgroundColor: '#E7F5F4'}]}>
+                  <Activity size={24} color="#2E8B7E" />
+                </View>
+                <Text style={styles.serviceIconTitle}>웨어러블</Text>
+              </TouchableOpacity>
+            )}
 
             {/* 피부 진단 */}
             <TouchableOpacity
@@ -832,6 +874,73 @@ const styles = StyleSheet.create({
     height: 8,
     borderRadius: 4,
     backgroundColor: '#F03F3F',
+  },
+  // 헤더 날씨 섹션
+  weatherHeaderSection: {
+    marginTop: 12,
+    paddingTop: 12,
+    paddingBottom: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#F0F0F0',
+    borderRadius: 8,
+    paddingHorizontal: 4,
+    marginHorizontal: -4,
+    minHeight: 60, // 고정 높이로 레이아웃 시프트 방지
+  },
+  weatherHeaderContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    height: 36, // 고정 높이
+  },
+  weatherIconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#E7F5F4',
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexShrink: 0, // 크기 고정
+  },
+  weatherHeaderTextWrapper: {
+    flex: 1,
+    minHeight: 36, // 최소 높이 고정
+    justifyContent: 'center', // 세로 중앙 정렬
+  },
+  weatherHeaderTextContainer: {
+    gap: 2,
+  },
+  weatherHeaderText: {
+    fontSize: 15,
+    color: '#2E8B7E',
+    fontWeight: '600',
+    letterSpacing: -0.2,
+    lineHeight: 18,
+  },
+  weatherHeaderHint: {
+    fontSize: 13,
+    color: '#9CA3AF',
+    fontWeight: '400',
+    letterSpacing: -0.1,
+    lineHeight: 14,
+  },
+  weatherHeaderDetails: {
+    gap: 4,
+  },
+  weatherHeaderDetailText: {
+    fontSize: 12,
+    color: '#4A5568',
+    fontWeight: '500',
+    lineHeight: 16,
+  },
+  weatherChevronContainer: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#F0F4F8',
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexShrink: 0, // 크기 고정
   },
   // 반려동물 프로필 섹션
   petProfileSection: {
@@ -1186,6 +1295,7 @@ const styles = StyleSheet.create({
   serviceGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    justifyContent: 'center',
     marginTop: 16,
     marginHorizontal: -6,
     marginBottom: 4,
