@@ -339,6 +339,10 @@ export function MonitoringScreen({
     
     bleService.setCallbacks({
       onDataReceived: (data) => {
+        // ✅ BLE로 받은 데이터를 그대로 콘솔에 출력
+        console.log('📥 [BLE 수신 데이터]', JSON.stringify(data, null, 2));
+        console.log('📥 [BLE 수신 데이터 - 원본]', data);
+        
         // ⚠️ 최적화: BLEService에서 이미 UPDATE_DATAS를 dispatch하므로
         // 여기서는 중복 dispatch 제거하고 체온 히스토리만 업데이트
         // 로그도 최소화하여 성능 개선
@@ -584,7 +588,6 @@ export function MonitoringScreen({
     });
 
     return () => {
-      cancelled = true;
       offConnectedDevices();
       offTelemetry();
     };

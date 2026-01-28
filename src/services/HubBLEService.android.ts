@@ -717,6 +717,22 @@ class HubBLEService {
     }
 
     const subUpdate = BleManager.onDidUpdateValueForCharacteristic((evt: any) => {
+      // ✅ 에러가 있으면 "Operation was cancelled"인지 확인 (Wi-Fi 연결 성공 후 BLE 해제 시 정상적인 상황)
+      if (evt?.error) {
+        const errorMsg = String(evt.error?.message || evt.error || '');
+        const isCancelled = errorMsg.includes('Operation was cancelled') || 
+                          errorMsg.includes('cancelled') ||
+                          errorMsg.includes('disconnected');
+        
+        if (isCancelled) {
+          console.log('[HubBLEService] ℹ️ Characteristic update cancelled (Wi-Fi 연결 완료로 인한 정상적인 BLE 해제)', {peripheralId});
+          return;
+        }
+        
+        console.error('[HubBLEService] ❌ Characteristic update error', {peripheralId, error: evt.error});
+        return;
+      }
+      
       // #region agent log
       fetch('http://127.0.0.1:7244/ingest/3eff9cd6-dca3-41a1-a9e7-4063579704a1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'HubBLEService.ts:847',message:'onDidUpdateValueForCharacteristic',data:{peripheralId,hasValue:Array.isArray(evt?.value),valueLength:Array.isArray(evt?.value)?evt.value.length:0},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H2'})}).catch(()=>{});
       // #endregion
@@ -753,6 +769,31 @@ class HubBLEService {
     });
 
     this.subs.push(subUpdate);
+  }
+
+  async sendCommand(peripheralId: string, command: string): Promise<void> {
+    await this.ensureReady();
+    const commandWithNewline = command.endsWith('\n') ? command : `${command}\n`;
+    const bytes = Array.from(Buffer.from(commandWithNewline, 'utf8'));
+    
+    try {
+      await BleManager.write(peripheralId, this.resolvedServiceUuid, this.resolvedTxUuid, bytes);
+      console.log('[HubBLEService] 📤 sendCommand success (Android)', {
+        peripheralId,
+        command,
+      });
+    } catch (e1) {
+      try {
+        await (BleManager as any).writeWithoutResponse(peripheralId, this.resolvedServiceUuid, this.resolvedTxUuid, bytes);
+        console.log('[HubBLEService] 📤 sendCommand success (Android, withoutResponse)', {
+          peripheralId,
+          command,
+        });
+      } catch (e2) {
+        this.logError('sendCommand failed', e2, {peripheralId, command});
+        throw e2;
+      }
+    }
   }
 
   async sendWifiConfig(peripheralId: string, ssid: string, password: string, userEmail: string) {
@@ -852,6 +893,52 @@ class HubBLEService {
         });
         throw e2;
       }
+    }
+  }
+
+  async sendCommand(peripheralId: string, command: string): Promise<void> {
+    console.log('[HubBLEService] 📤 sendCommand (Android)', {
+      peripheralId,
+      command,
+    });
+
+    if (!this.resolvedServiceUuid || !this.resolvedTxUuid) {
+      throw new Error('Service or TX characteristic UUID not ready');
+    }
+
+    try {
+      const commandBytes = Array.from(Buffer.from(command, 'utf8'));
+      
+      try {
+        await BleManager.write(peripheralId, this.resolvedServiceUuid, this.resolvedTxUuid, commandBytes);
+        console.log('[HubBLEService] 📤 sendCommand (Android, withResponse)', {
+          peripheralId,
+          command,
+        });
+      } catch (e1) {
+        this.logError('sendCommand failed, retrying withoutResponse', e1, {
+          peripheralId,
+          command,
+        });
+        await (BleManager as any).writeWithoutResponse(peripheralId, this.resolvedServiceUuid, this.resolvedTxUuid, commandBytes);
+        console.log('[HubBLEService] 📤 sendCommand (Android, withoutResponse)', {
+          peripheralId,
+          command,
+        });
+      }
+
+      await new Promise<void>(resolve => setTimeout(resolve, 30));
+      
+      console.log('[HubBLEService] ✅ sendCommand OK (Android)', {
+        peripheralId,
+        command,
+      });
+    } catch (e) {
+      this.logError('sendCommand failed', e, {
+        peripheralId,
+        command,
+      });
+      throw e;
     }
   }
 

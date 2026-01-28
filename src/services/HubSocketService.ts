@@ -40,7 +40,8 @@ class HubSocketService {
   private currentAppState: AppStateStatus = AppState.currentState;
 
   // ✅ 활동 TTL: 이 시간 동안 아무 이벤트가 없으면 online이라도 offline로 강등 (background 타이머 정지 대비)
-  private readonly HUB_STALE_MS = 15000;
+  // ✅ 허브가 온라인인데 오프라인으로 표시되는 문제 해결을 위해 60초로 연장
+  private readonly HUB_STALE_MS = 60000;
   private readonly OFFLINE_NOTIFY_COOLDOWN_MS = 30000;
 
   constructor() {
@@ -327,12 +328,37 @@ class HubSocketService {
       this.debugLog('MQTT_READY', payload);
       this.emitToLocal('MQTT_READY', payload);
     });
+    s.on('HUB_ACTIVITY', (payload: any) => {
+      // ✅ 모든 수신 데이터를 콘솔에 출력
+      console.log(`[HubSocketService] 📥 Socket.IO Event: "HUB_ACTIVITY"`, {
+        event: 'HUB_ACTIVITY',
+        timestamp: new Date().toISOString(),
+        payload,
+        payloadType: typeof payload,
+        payloadString: JSON.stringify(payload, null, 2),
+      });
+      this.debugLog('HUB_ACTIVITY', payload);
+      const hubId =
+        typeof payload?.hubAddress === 'string'
+          ? payload.hubAddress
+          : typeof payload?.hubId === 'string'
+            ? payload.hubId
+            : typeof payload?.hub_address === 'string'
+              ? payload.hub_address
+              : null;
+      if (hubId) {
+        this.hubStatus.set(hubId, 'online');
+        this.lastHubActivityAt.set(hubId, Date.now());
+      }
+      // ✅ 로컬 리스너에게 전달
+      this.emitToLocal('HUB_ACTIVITY', payload);
+    });
     
     // ✅ 알 수 없는 이벤트도 로깅하기 위해 모든 이벤트를 감지
     if (typeof (s as any).onAny === 'function') {
       (s as any).onAny((event: string, ...args: any[]) => {
         // 이미 위에서 등록한 이벤트는 중복 로깅 방지
-        if (!['connect', 'disconnect', 'connect_error', 'connected', 'CONTROL_ACK', 'CONTROL_RESULT', 'TELEMETRY', 'CONNECTED_DEVICES', 'MQTT_READY'].includes(event)) {
+        if (!['connect', 'disconnect', 'connect_error', 'connected', 'CONTROL_ACK', 'CONTROL_RESULT', 'TELEMETRY', 'CONNECTED_DEVICES', 'MQTT_READY', 'HUB_ACTIVITY'].includes(event)) {
           console.log(`[HubSocketService] 📥 Socket.IO Unknown Event: "${event}"`, {
             event,
             timestamp: new Date().toISOString(),
