@@ -75,9 +75,8 @@ export function HubDeviceManagementScreen() {
   const [hubName, setHubName] = useState('');
   const [isProvisionDone, setIsProvisionDone] = useState(false);
   const [debugText, setDebugText] = useState('');
-  const [ssidList, setSsidList] = useState<string[]>([]);
   
-  // Wi-Fi 목록 (SSID, RSSI, SECURITY 포함)
+  // Wi-Fi 목록 관련 state
   type WiFiInfo = {
     ssid: string;
     rssi: number;
@@ -239,7 +238,6 @@ export function HubDeviceManagementScreen() {
     setHubCandidates([]);
     setCandidateNames({});
     setHubScanLoading(false);
-    setSsidList([]);
     setWifiList([]);
     setShowPasswordInput(false);
   };
@@ -295,6 +293,7 @@ export function HubDeviceManagementScreen() {
     setHubName(candidateName); // 선택한 허브의 이름을 기본값으로 설정
     setHubStep('wifi');
     setDebugText('허브에 연결 중...');
+    setWifiList([]); // Wi-Fi 목록 초기화
 
     try {
       // connect 메서드 사용
@@ -302,44 +301,16 @@ export function HubDeviceManagementScreen() {
       
       // Notifications 시작 (Wi-Fi 연결 성공 메시지 및 Wi-Fi 목록 수신을 위해)
       await hubBleService.startNotifications(candidate.id, (line: string) => {
+        console.log('[HubDeviceManagementScreen] 📥 BLE 수신:', line);
+        
         const lower = String(line || '').trim().toLowerCase();
         if (lower === 'wifi connected success' || lower.includes('wifi connected success')) {
           setDebugText('Wi‑Fi 연결 성공!');
-          console.log('[HubDeviceManagementScreen] ✅ Wi‑Fi 연결 성공 감지, 5초 후 모달 닫기 및 목록 업데이트');
-          
-          // ✅ Wi‑Fi 연결 성공 시 5초 후 모달 닫기 및 목록 업데이트
-          setTimeout(() => {
-            refreshHubs(true).then(() => {
-              console.log('[HubDeviceManagementScreen] ✅ 허브 목록 업데이트 완료 (Wi‑Fi 연결 성공)');
-            }).catch((err) => {
-              console.error('[HubDeviceManagementScreen] ❌ 허브 목록 업데이트 실패:', err);
-            });
-            
-            setShowHubProvisionModal(false);
-            resetProvisionScreen();
-            // ✅ 자동 블루투스 스캔 기능 제거 (사용자 요청)
-            
-            Toast.show({
-              type: 'success',
-              text1: '허브 등록 완료',
-              text2: 'Wi‑Fi 연결이 완료되었습니다.',
-              position: 'bottom',
-            });
-          }, 5000);
-        }
-        // 허브가 Wi‑Fi 목록을 보낼 수도 있으니 대응
-        if (typeof line === 'string' && line.startsWith('ssid:')) {
-          const m = line.match(/ssid:\s*\[(.*?)\]/);
-          if (m && typeof m[1] === 'string') {
-            const list =
-              m[1].match(/"([^"]+)"/g)?.map(x => x.replace(/"/g, '')) || [];
-            setSsidList(list);
-            setDebugText(`Wi-Fi 목록 수신 (${list.length}개)`);
-          }
         }
         
         // ✅ wifi_list: 형식 파싱 (SSID|RSSI|SECURITY,SSID|RSSI|SECURITY,...)
         if (typeof line === 'string' && line.startsWith('wifi_list:')) {
+          console.log('[HubDeviceManagementScreen] 📥 wifi_list 수신:', line);
           const wifiListStr = line.replace('wifi_list:', '').trim();
           const wifiItems = wifiListStr.split(',').filter(item => item.trim().length > 0);
           
@@ -357,8 +328,8 @@ export function HubDeviceManagementScreen() {
                 continue;
               }
               
-              // 필터링: RSSI가 -80 이하인 것 제외
-              if (isNaN(rssi) || rssi <= -80) {
+              // 필터링: RSSI가 -85 이하인 것 제외
+              if (isNaN(rssi) || rssi <= -85) {
                 continue;
               }
               
@@ -378,34 +349,23 @@ export function HubDeviceManagementScreen() {
           parsedWifiList.sort((a, b) => b.rssi - a.rssi);
           
           setWifiList(parsedWifiList);
-          setSsidList(parsedWifiList.map(w => w.ssid));
           setDebugText(`Wi-Fi 목록 수신 (${parsedWifiList.length}개)`);
           console.log('[HubDeviceManagementScreen] ✅ Wi-Fi 목록 파싱 완료:', parsedWifiList);
         }
       });
       
       setDebugText('허브 연결 완료. Wi‑Fi 스캔 중...');
-
-      // BLE로 scan:wifi 명령 전송
+      
+      // BLE로 scan:wifi 명령 전송 (자동, 연결 직후)
       try {
+        // 연결 후 약간의 대기 시간 (BLE 연결 안정화)
+        await new Promise<void>(resolve => setTimeout(() => resolve(), 500));
         await hubBleService.sendCommand(candidate.id, 'scan:wifi');
         setDebugText('Wi‑Fi 스캔 명령 전송 완료. 목록 수신 대기 중...');
+        console.log('[HubDeviceManagementScreen] ✅ scan:wifi 명령 전송 완료');
       } catch (e) {
-        console.error('[HubDeviceManagementScreen] Wi‑Fi 스캔 명령 전송 실패:', e);
-        setDebugText('Wi‑Fi 스캔 명령 전송 실패. 직접 입력하세요.');
-      }
-
-      // 현재 Wi‑Fi SSID 가져오기 (Android만)
-      if (Platform.OS === 'android') {
-        try {
-          // @ts-ignore - WifiManager 타입 정의에 getCurrentWifiSSID가 없을 수 있음
-          const currentSSID = await WifiManager.getCurrentWifiSSID?.();
-          if (currentSSID) {
-            setWifiSSID(currentSSID);
-          }
-        } catch (e) {
-          console.log('[HubDeviceManagementScreen] 현재 Wi‑Fi SSID 가져오기 실패:', e);
-        }
+        console.error('[HubDeviceManagementScreen] ❌ Wi‑Fi 스캔 명령 전송 실패:', e);
+        setDebugText('Wi‑Fi 스캔 명령 전송 실패.');
       }
     } catch (error) {
       console.error('[HubDeviceManagementScreen] 허브 연결 실패:', error);
@@ -448,15 +408,13 @@ export function HubDeviceManagementScreen() {
   };
 
   // Wi‑Fi 선택 처리
-  const handleWifiSelect = async (wifi: WiFiInfo) => {
+  const handleWifiSelect = (wifi: WiFiInfo) => {
     setWifiSSID(wifi.ssid);
     
-    // 암호화되지 않은 Wi-Fi는 자동으로 전송
+    // 암호화되지 않은 Wi-Fi는 비밀번호 입력 불필요
     if (!wifi.isEncrypted) {
       setWifiPassword('');
       setShowPasswordInput(false);
-      // 자동으로 전송
-      await provisionHub(wifi.ssid, '');
     } else {
       // 암호화된 Wi-Fi는 비밀번호 입력 필요
       setWifiPassword('');
@@ -949,18 +907,8 @@ export function HubDeviceManagementScreen() {
               {hubStep === 'wifi' && selectedHubCandidate && (
                 <View style={styles.modalBody}>
                   <Text style={styles.modalDescription}>
-                    Wi‑Fi 정보를 입력하세요.
+                    Wi‑Fi를 선택하세요.
                   </Text>
-                  <View style={styles.inputGroup}>
-                    <Text style={styles.inputLabel}>허브 이름</Text>
-                    <TextInput
-                      style={styles.input}
-                      value={hubName}
-                      onChangeText={setHubName}
-                      placeholder="허브 이름을 입력하세요"
-                      placeholderTextColor="#999"
-                    />
-                  </View>
                   <View style={styles.inputGroup}>
                     <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8}}>
                       <Text style={styles.inputLabel}>Wi‑Fi SSID *</Text>
@@ -1044,18 +992,12 @@ export function HubDeviceManagementScreen() {
                         </ScrollView>
                       </View>
                     ) : (
-                      <Text style={{fontSize: 12, color: '#999', marginBottom: 8, fontStyle: 'italic'}}>
-                        Wi‑Fi 목록을 불러오는 중...
-                      </Text>
+                      <View style={{padding: 16, backgroundColor: '#F9F9F9', borderRadius: 8, marginBottom: 8}}>
+                        <Text style={{fontSize: 12, color: '#999', textAlign: 'center', fontStyle: 'italic'}}>
+                          Wi‑Fi 목록을 불러오는 중...
+                        </Text>
+                      </View>
                     )}
-                    <TextInput
-                      style={[styles.input, {backgroundColor: '#F5F5F5'}]}
-                      value={wifiSSID}
-                      placeholder="Wi‑Fi를 선택하세요"
-                      placeholderTextColor="#999"
-                      autoCapitalize="none"
-                      editable={false}
-                    />
                   </View>
                   {showPasswordInput && (
                     <View style={styles.inputGroup}>
@@ -1071,25 +1013,19 @@ export function HubDeviceManagementScreen() {
                       />
                     </View>
                   )}
-                  {showPasswordInput && (
+                  {wifiSSID.trim() && (
                     <TouchableOpacity
-                      style={[styles.modalPrimaryButton, (!wifiSSID.trim() || !wifiPassword.trim()) && styles.modalPrimaryButtonDisabled]}
+                      style={[styles.modalPrimaryButton, (showPasswordInput && !wifiPassword.trim()) && styles.modalPrimaryButtonDisabled]}
                       onPress={() => provisionHub()}
-                      disabled={!wifiSSID.trim() || !wifiPassword.trim()}
+                      disabled={showPasswordInput && !wifiPassword.trim()}
                       activeOpacity={0.85}>
                       <Wifi size={18} color="white" />
                       <Text style={styles.modalPrimaryButtonText}>
-                        {wifiSSID.trim() && wifiPassword.trim() ? '허브 등록 시작' : '비밀번호를 입력해주세요'}
+                        {showPasswordInput && !wifiPassword.trim() ? '비밀번호를 입력해주세요' : '허브 등록 시작'}
                       </Text>
                     </TouchableOpacity>
                   )}
-                  {wifiSSID.trim() && !showPasswordInput && wifiList.find(w => w.ssid === wifiSSID) && !wifiList.find(w => w.ssid === wifiSSID)?.isEncrypted && (
-                    <View style={{marginTop: 8, padding: 12, backgroundColor: '#E7F5F4', borderRadius: 8}}>
-                      <Text style={{fontSize: 12, color: '#2E8B7E', textAlign: 'center', fontWeight: '500'}}>
-                        암호화되지 않은 Wi‑Fi입니다. 자동으로 연결됩니다.
-                      </Text>
-                    </View>
-                  )}
+                  {debugText ? <Text style={styles.debugText}>{debugText}</Text> : null}
                 </View>
               )}
 
