@@ -59,14 +59,42 @@ export function DeviceRegisterScreen() {
     refreshConnectedDevices();
 
     // CONNECTED_DEVICES 이벤트 구독
-    const off = hubSocketService.on('CONNECTED_DEVICES', (payload: any) => {
+    const off = hubSocketService.on('CONNECTED_DEVICES', async (payload: any) => {
       const payloadHubAddress = String(payload?.hubAddress || payload?.hubId || payload?.hub_address || '');
       if (payloadHubAddress !== hubAddress) return;
 
       const list = Array.isArray(payload?.connected_devices) ? payload.connected_devices : [];
-      setConnectedDevices(list);
-      ensureDraftsForMacs(list);
-      refreshHubDevices();
+      console.log('[DeviceRegisterScreen] CONNECTED_DEVICES 이벤트 수신:', list);
+      
+      // ✅ 백엔드에서 자동 등록이 일어날 수 있으므로, 약간의 지연 후 등록된 디바이스 목록을 가져와서 필터링
+      // 백엔드 자동 등록이 완료될 시간을 주기 위해 500ms 대기
+      await new Promise<void>(resolve => setTimeout(() => resolve(), 500));
+      
+      // 등록된 디바이스 목록을 최신 상태로 가져오기
+      const updatedHubDevices = await refreshHubDevices();
+      
+      // ✅ 등록된 디바이스 목록 (최신 상태)
+      const registeredMacs = updatedHubDevices.map(d => d.address.toLowerCase());
+      
+      // ✅ 등록되지 않은 디바이스만 필터링 (새로 찾은 디바이스)
+      const newDevicesList = list.filter((mac: string) => !registeredMacs.includes(mac.toLowerCase()));
+      console.log('[DeviceRegisterScreen] 연결된 디바이스:', list);
+      console.log('[DeviceRegisterScreen] 등록된 디바이스:', registeredMacs);
+      console.log('[DeviceRegisterScreen] 새로 찾은 디바이스 (등록되지 않은 것만):', newDevicesList);
+      
+      if (newDevicesList.length === 0 && list.length > 0) {
+        // ✅ 연결된 디바이스가 있지만 모두 등록된 경우
+        console.log('[DeviceRegisterScreen] 모든 디바이스가 이미 등록되어 있습니다.');
+        Toast.show({
+          type: 'info',
+          text1: '모든 디바이스가 이미 등록되어 있습니다',
+          position: 'bottom',
+        });
+      }
+      
+      // ✅ 등록되지 않은 디바이스만 표시
+      setConnectedDevices(newDevicesList);
+      ensureDraftsForMacs(newDevicesList);
       setIsSearching(false);
     });
 
@@ -76,7 +104,7 @@ export function DeviceRegisterScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hubAddress]);
 
-  const refreshHubDevices = async () => {
+  const refreshHubDevices = async (): Promise<HubDevice[]> => {
     try {
       const res = await apiService.get<{success: boolean; data: any[]}>(
         `/device?hubAddress=${encodeURIComponent(hubAddress)}`,
@@ -88,8 +116,10 @@ export function DeviceRegisterScreen() {
           updatedAt: typeof d.updatedAt === 'string' ? d.updatedAt : undefined,
         })) || [];
       setHubDevices(list);
+      return list;
     } catch {
       // 네트워크 에러는 조용히 무시
+      return hubDevices; // 현재 상태 반환
     }
   };
 

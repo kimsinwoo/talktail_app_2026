@@ -25,12 +25,13 @@ interface PetFormData {
   gender: '수컷' | '암컷';
   neutering: '여' | '부';
   birthDate: string;
-  admissionDate: string;
   species: string;
   weight: string;
-  veterinarian: string;
-  diagnosis: string;
-  medicalHistory: string;
+  /** 모바일 등록에서는 미사용 (선택) */
+  admissionDate?: string;
+  veterinarian?: string;
+  diagnosis?: string;
+  medicalHistory?: string;
   device_address?: string | null;
 }
 
@@ -81,13 +82,15 @@ export const userStore = create<UserStore>((set, get) => ({
   deleteError: null,
   deleteSuccess: false,
 
+  /** hub_project/back: GET /api/pet → { success, count, data: [...] } */
   fetchPets: async () => {
     try {
       set({loadLoading: true, loadError: null, loadSuccess: false});
-      const response = await apiService.get<{success: boolean; data: any[]}>('/pet');
-      const rows = (response as any)?.data || [];
-      const nextPets: Pet[] = rows.map((p: any) => ({
-        pet_code: String(p.id),
+      const response = await apiService.get<{success: boolean; data: any[]; count?: number}>('/pet');
+      const body = (response as any)?.data;
+      const rows = Array.isArray(body?.data) ? body.data : (body?.pets ?? (Array.isArray(body) ? body : []));
+      const nextPets: Pet[] = (Array.isArray(rows) ? rows : []).map((p: any) => ({
+        pet_code: p.pet_code ?? String(p.id),
         name: p.name,
         breed: p.breed,
         species: p.species,
@@ -127,11 +130,11 @@ export const userStore = create<UserStore>((set, get) => ({
   registerPet: async (formData: PetFormData) => {
     try {
       set({registerLoading: true, registerError: null, registerSuccess: false});
-      await apiService.post('/pet', formData);
-      const petsResponse = await apiService.get<{success: boolean; data: any[]}>('/pet');
-      const rows = (petsResponse as any)?.data || [];
-      const nextPets: Pet[] = rows.map((p: any) => ({
-        pet_code: String(p.id),
+      await apiService.post('/pets', formData);
+      const petsResponse = await apiService.get<{success: boolean; data: {pets: any[]}}>('/pets');
+      const rows = (petsResponse as any)?.data?.pets ?? (petsResponse as any)?.data ?? [];
+      const nextPets: Pet[] = (Array.isArray(rows) ? rows : []).map((p: any) => ({
+        pet_code: p.pet_code ?? String(p.id),
         name: p.name,
         breed: p.breed,
         species: p.species,
@@ -173,12 +176,12 @@ export const userStore = create<UserStore>((set, get) => ({
   updatePet: async (petData: any) => {
     try {
       set({updateLoading: true, updateError: null, updateSuccess: false});
-      const petId = String(petData.pet_code || petData.id);
-      await apiService.put(`/pet/${petId}`, petData);
-      const petsResponse = await apiService.get<{success: boolean; data: any[]}>('/pet');
-      const rows = (petsResponse as any)?.data || [];
-      const nextPets: Pet[] = rows.map((p: any) => ({
-        pet_code: String(p.id),
+      const petId = String(petData.pet_code ?? petData.id ?? '');
+      await apiService.put(`/pets/${petId}`, petData);
+      const petsResponse = await apiService.get<{success: boolean; data: {pets: any[]}}>('/pets');
+      const rows = (petsResponse as any)?.data?.pets ?? (petsResponse as any)?.data ?? [];
+      const nextPets: Pet[] = (Array.isArray(rows) ? rows : []).map((p: any) => ({
+        pet_code: p.pet_code ?? String(p.id),
         name: p.name,
         breed: p.breed,
         species: p.species,
@@ -213,11 +216,11 @@ export const userStore = create<UserStore>((set, get) => ({
   deletePet: async (petCode: string) => {
     try {
       set({deleteLoading: true, deleteError: null, deleteSuccess: false});
-      await apiService.delete(`/pet/${petCode}`);
-      const petsResponse = await apiService.get<{success: boolean; data: any[]}>('/pet');
-      const rows = (petsResponse as any)?.data || [];
-      const nextPets: Pet[] = rows.map((p: any) => ({
-        pet_code: String(p.id),
+      await apiService.delete(`/pets/${petCode}`);
+      const petsResponse = await apiService.get<{success: boolean; data: {pets: any[]}}>('/pets');
+      const rows = (petsResponse as any)?.data?.pets ?? (petsResponse as any)?.data ?? [];
+      const nextPets: Pet[] = (Array.isArray(rows) ? rows : []).map((p: any) => ({
+        pet_code: p.pet_code ?? String(p.id),
         name: p.name,
         breed: p.breed,
         species: p.species,

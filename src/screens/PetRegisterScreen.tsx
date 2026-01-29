@@ -27,11 +27,6 @@ export default function PetRegisterScreen({navigation}: Props) {
     weight: '',
     gender: '수컷' as '수컷' | '암컷',
     neutering: '여' as '여' | '부',
-    admissionDate: '',
-    veterinarian: '',
-    diagnosis: '',
-    medicalHistory: '',
-    device_address: '',
   });
 
   useEffect(() => {
@@ -70,22 +65,6 @@ export default function PetRegisterScreen({navigation}: Props) {
       Toast.show({type: 'error', text1: '오류', text2: '생일을 입력해주세요.'});
       return false;
     }
-    if (!form.admissionDate.trim()) {
-      Toast.show({type: 'error', text1: '오류', text2: '입원일을 입력해주세요.'});
-      return false;
-    }
-    if (!form.veterinarian.trim()) {
-      Toast.show({type: 'error', text1: '오류', text2: '담당 수의사를 입력해주세요.'});
-      return false;
-    }
-    if (!form.diagnosis.trim()) {
-      Toast.show({type: 'error', text1: '오류', text2: '진단명을 입력해주세요.'});
-      return false;
-    }
-    if (!form.medicalHistory.trim()) {
-      Toast.show({type: 'error', text1: '오류', text2: '병력을 입력해주세요.'});
-      return false;
-    }
     return true;
   };
 
@@ -94,8 +73,12 @@ export default function PetRegisterScreen({navigation}: Props) {
     try {
       await registerPet({
         ...form,
-        device_address: form.device_address ? form.device_address : null,
-      } as any);
+        admissionDate: '',
+        veterinarian: '',
+        diagnosis: '',
+        medicalHistory: '',
+        device_address: null,
+      });
     } catch (e) {
       // store가 에러 상태를 세팅하므로 여기서는 UNHANDLED PROMISE만 방지
     }
@@ -185,52 +168,6 @@ export default function PetRegisterScreen({navigation}: Props) {
               <Text style={styles.pillText}>변경</Text>
             </TouchableOpacity>
           </View>
-
-          <Text style={styles.label}>입원일 *</Text>
-          <TextInput
-            style={styles.input}
-            value={form.admissionDate}
-            onChangeText={t => setForm(p => ({...p, admissionDate: t}))}
-            placeholder="예: 2026-01-16"
-            placeholderTextColor="#999999"
-          />
-
-          <Text style={styles.label}>담당 수의사 *</Text>
-          <TextInput
-            style={styles.input}
-            value={form.veterinarian}
-            onChangeText={t => setForm(p => ({...p, veterinarian: t}))}
-            placeholder="예: 김수의"
-            placeholderTextColor="#999999"
-          />
-
-          <Text style={styles.label}>진단명 *</Text>
-          <TextInput
-            style={styles.input}
-            value={form.diagnosis}
-            onChangeText={t => setForm(p => ({...p, diagnosis: t}))}
-            placeholder="예: 피부염"
-            placeholderTextColor="#999999"
-          />
-
-          <Text style={styles.label}>병력 *</Text>
-          <TextInput
-            style={styles.input}
-            value={form.medicalHistory}
-            onChangeText={t => setForm(p => ({...p, medicalHistory: t}))}
-            placeholder="예: 1년 전 수술..."
-            placeholderTextColor="#999999"
-          />
-
-          <Text style={styles.label}>디바이스 MAC(선택)</Text>
-          <TextInput
-            style={styles.input}
-            value={form.device_address}
-            onChangeText={t => setForm(p => ({...p, device_address: t}))}
-            placeholder="예: AA:BB:CC:DD:EE:FF"
-            placeholderTextColor="#999999"
-            autoCapitalize="characters"
-          />
 
           <TouchableOpacity
             onPress={handleSubmit}

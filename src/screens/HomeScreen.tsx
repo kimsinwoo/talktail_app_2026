@@ -36,7 +36,7 @@ import {
 } from 'lucide-react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
-import {useNavigation, useFocusEffect} from '@react-navigation/native';
+import {useNavigation, useFocusEffect, useRoute} from '@react-navigation/native';
 import type {Pet as RegisteredPet} from '../store/userStore';
 import {hubStatusStore} from '../store/hubStatusStore';
 
@@ -61,6 +61,7 @@ export function HomeScreen({
   const [currentPetIndex, setCurrentPetIndex] = useState(0);
   const [isWeatherExpanded, setIsWeatherExpanded] = useState(false);
   const navigation = useNavigation<any>();
+  const route = useRoute();
   const petFlatListRef = useRef<FlatList>(null);
   const petDependentSectionRef = useRef<FlatList>(null);
   
@@ -157,12 +158,18 @@ export function HomeScreen({
     });
   };
 
-  // 화면이 포커스될 때마다 허브 목록 새로고침
+  // 화면이 포커스될 때마다 허브 목록 새로고침 및 경로 출력
   useFocusEffect(
     React.useCallback(() => {
+      // 페이지 주소 출력
+      console.log('[📍 페이지 진입] HomeScreen');
+      console.log('  - Route Name:', route.name);
+      console.log('  - Route Params:', JSON.stringify(route.params || {}, null, 2));
+      console.log('  - Route Key:', route.key);
+      
       // 허브 목록 강제 새로고침 (캐시 무시)
       hubStatusStore.getState().refreshHubs(true).catch(() => {});
-    }, []),
+    }, [route.name, route.params, route.key]),
   );
 
   // 반려동물 슬라이드 변경 핸들러
@@ -694,22 +701,22 @@ export function HomeScreen({
           />
         </View>
 
-        {/* 서비스 아이콘 그리드 */}
+          {/* 서비스 아이콘 그리드 */}
         <View style={styles.section}>
           <View style={styles.serviceGrid}>
             {/* 웨어러블 모니터링 (허브가 없을 때만 작은 아이콘으로 표시) */}
             {!hasHub && (
-              <TouchableOpacity
-                style={styles.serviceIconCard}
-                activeOpacity={0.85}
-                onPress={() => {
-                  (navigation as any).navigate('DeviceManagement');
-                }}>
-                <View style={[styles.serviceIconContainer, {backgroundColor: '#E7F5F4'}]}>
-                  <Activity size={24} color="#2E8B7E" />
-                </View>
-                <Text style={styles.serviceIconTitle}>웨어러블</Text>
-              </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.serviceIconCard}
+              activeOpacity={0.85}
+              onPress={() => {
+                (navigation as any).navigate('DeviceManagement');
+              }}>
+              <View style={[styles.serviceIconContainer, {backgroundColor: '#E7F5F4'}]}>
+                <Activity size={24} color="#2E8B7E" />
+              </View>
+              <Text style={styles.serviceIconTitle}>웨어러블</Text>
+            </TouchableOpacity>
             )}
 
             {/* 피부 진단 */}

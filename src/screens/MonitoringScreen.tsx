@@ -23,7 +23,7 @@ import {
   X,
 } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import { useBLE } from '../services/BLEContext';
 import { bleService } from '../services/BLEService';
 import { hubSocketService } from '../services/HubSocketService';
@@ -60,6 +60,7 @@ export function MonitoringScreen({
   autoStart = false,
 }: MonitoringScreenProps) {
   const navigation = useNavigation();
+  const route = useRoute();
   const { state, dispatch } = useBLE();
   const [tempHistory, setTempHistory] = useState<number[]>([]);
   const [dailyCalories, setDailyCalories] = useState<number>(0);
@@ -101,6 +102,18 @@ export function MonitoringScreen({
   const hubConnectedNowRaw = selectedHub
     ? connectedDevicesByHub[selectedHub] || []
     : [];
+  
+  // 페이지 진입 시 경로 정보 출력
+  useFocusEffect(
+    React.useCallback(() => {
+      console.log('[📍 페이지 진입] MonitoringScreen');
+      console.log('  - Route Name:', route.name);
+      console.log('  - Route Params:', JSON.stringify(route.params || {}, null, 2));
+      console.log('  - Route Key:', route.key);
+      console.log('  - Props:', { petId, petName, petImage, autoStart });
+    }, [route.name, route.params, route.key, petId, petName, petImage, autoStart]),
+  );
+  
   // ✅ 등록된 디바이스만 필터링
   const hubConnectedNow = hubConnectedNowRaw.filter(mac =>
     registeredDevices.includes(mac),

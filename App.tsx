@@ -66,6 +66,7 @@ import HealthCheckStartScreen from './src/screens/HealthCheckStartScreen';
 import { HubConsoleScreen } from './src/screens/HubConsoleScreen';
 import { DeviceRegisterScreen } from './src/screens/DeviceRegisterScreen';
 import { HubDeviceManagementScreen } from './src/screens/HubDeviceManagementScreen';
+import { DeviceSetupFlowScreen } from './src/screens/DeviceSetupFlowScreen';
 import { DiaryScreen } from './src/screens/DiaryScreen';
 import { DiaryWriteScreen } from './src/screens/DiaryWriteScreen';
 import { DiaryDetailScreen } from './src/screens/DiaryDetailScreen';
@@ -125,7 +126,8 @@ export type RootStackParamList = {
   MonitoringDetail:
     | { petCode: string; deviceMac: string; petName?: string }
     | undefined;
-  DeviceManagement: { initialMode?: 'hubProvision' | 'ble1to1' } | undefined;
+  DeviceManagement: { initialMode?: 'hubProvision' | 'ble1to1'; returnToMonitoring?: boolean } | undefined;
+  DeviceSetupFlow: undefined;
   DailyHealthCheck: { petCode?: string; petName?: string } | undefined;
   RecentStatusTrend: { petCode?: string; petName?: string } | undefined;
   HealthConsultation: { petCode?: string; petName?: string } | undefined;
@@ -659,6 +661,10 @@ function App(): React.JSX.Element {
             <Stack.Screen
               name="DeviceManagement"
               component={DeviceManagementScreen}
+            />
+            <Stack.Screen
+              name="DeviceSetupFlow"
+              component={DeviceSetupFlowScreen}
             />
             <Stack.Screen
               name="DailyHealthCheck"

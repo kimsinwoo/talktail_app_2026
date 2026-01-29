@@ -24,7 +24,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
 import { orgStore } from '../store/orgStore';
 import { userStore } from '../store/userStore';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 
 interface MyPageScreenProps {
   // onAddToCart?: (productId: number) => void; // 스토어 기능 임시 비활성화
@@ -92,7 +92,18 @@ const menuItems = [
 
 export function MyPageScreen({ onAddToCart }: MyPageScreenProps) {
   const navigation = useNavigation();
+  const route = useRoute();
   const [refreshing, setRefreshing] = useState(false);
+
+  // 페이지 진입 시 경로 정보 출력
+  useFocusEffect(
+    React.useCallback(() => {
+      console.log('[📍 페이지 진입] MyPageScreen');
+      console.log('  - Route Name:', route.name);
+      console.log('  - Route Params:', JSON.stringify(route.params || {}, null, 2));
+      console.log('  - Route Key:', route.key);
+    }, [route.name, route.params, route.key]),
+  );
 
   // orgStore에서 사용자 정보 가져오기
   const orgState = orgStore();

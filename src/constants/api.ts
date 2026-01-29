@@ -1,9 +1,9 @@
 /**
- * ✅ 운영(원본) 백엔드 고정
- * - 기준: hub_project/back
- * - Base URL: https://creamoff.o-r.kr/api
+ * API Base URL (백엔드 연결)
  */
-export const getApiBaseUrl = (): string => 'https://creamoff.o-r.kr/api';
+export const getApiBaseUrl = (): string => {
+  return 'https://creamoff.o-r.kr/api';
+};
 
 // ApiService(axios)의 baseURL로 사용
 export const API_URL = getApiBaseUrl();
