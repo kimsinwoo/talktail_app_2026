@@ -275,11 +275,11 @@ export default function HospitalFinderScreen({navigation}: {navigation: any}) {
                     <Text style={styles.rankText}>{index + 1}</Text>
                   </View>
                   <View style={styles.cardInfo}>
-                    <Text style={styles.name}>{h.name}</Text>
-                    <Text style={styles.address}>{h.address}</Text>
+                <Text style={styles.name}>{h.name}</Text>
+                <Text style={styles.address}>{h.address}</Text>
                     <View style={styles.distanceContainer}>
                       <MapPin size={12} color="#2E8B7E" />
-                      <Text style={styles.distance}>약 {h.distanceKm.toFixed(1)}km</Text>
+                <Text style={styles.distance}>약 {h.distanceKm.toFixed(1)}km</Text>
                     </View>
                   </View>
                 </View>

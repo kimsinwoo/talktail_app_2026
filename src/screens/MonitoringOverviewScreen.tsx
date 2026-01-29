@@ -105,8 +105,8 @@ export function MonitoringOverviewScreen() {
     },
   ];
 
-  // 실제 펫이 있으면 사용, 없으면 더미 데이터 사용
-  const pets = petsFromStore.length > 0 ? petsFromStore : dummyPets;
+  // 더미 데이터를 항상 사용 (테스트용)
+  const pets = dummyPets;
 
   // 허브 상태 확인 (온라인 허브가 하나라도 있으면 ON, 없으면 더미로 ON 표시)
   const hubStatusInfo = useMemo(() => {
@@ -408,22 +408,59 @@ export function MonitoringOverviewScreen() {
                     onPress={() => handlePetCardPress(pet)}
                     disabled={!hasDevice}
                     activeOpacity={0.7}>
-                    {/* 펫 정보 */}
-                    <View style={styles.petCardHeader}>
-                      <View style={styles.petAvatar}>
-                        <Text style={styles.petAvatarText}>
-                          {(pet.name || 'P').slice(0, 1).toUpperCase()}
-                        </Text>
-                      </View>
-                      <View style={styles.petInfo}>
-                        <Text style={styles.petName}>{pet.name}</Text>
-                        <Text style={styles.petDetails}>
-                          {pet.breed || '품종'} · {pet.species || '반려동물'}
-                        </Text>
+                    {/* 펫 정보 및 생체 신호 데이터 (한 줄로 컴팩트하게) */}
+                    <View style={styles.petCardContent}>
+                      <View style={styles.petCardLeft}>
+                        <View style={styles.petAvatar}>
+                          <Text style={styles.petAvatarText}>
+                            {(pet.name || 'P').slice(0, 1).toUpperCase()}
+                          </Text>
+                        </View>
+                        <View style={styles.petInfo}>
+                          <Text style={styles.petName}>{pet.name}</Text>
+                          <Text style={styles.petDetails}>
+                            {pet.breed || '품종'}
+                          </Text>
+                        </View>
                       </View>
                       {hasDevice ? (
-                        <View style={styles.deviceBadge}>
-                          <Text style={styles.deviceBadgeText}>연결됨</Text>
+                        <View style={styles.telemetryRow}>
+                          <View style={styles.telemetryItemCompact}>
+                            <Heart size={14} color="#F03F3F" />
+                            <Text style={styles.telemetryValueCompact}>
+                              {telemetry.hr !== null
+                                ? Math.round(telemetry.hr)
+                                : '--'}
+                            </Text>
+                            <Text style={styles.telemetryUnitCompact}>BPM</Text>
+                          </View>
+                          <View style={styles.telemetryItemCompact}>
+                            <Droplet size={14} color="#2E8B7E" />
+                            <Text style={styles.telemetryValueCompact}>
+                              {telemetry.spo2 !== null
+                                ? Math.round(telemetry.spo2)
+                                : '--'}
+                            </Text>
+                            <Text style={styles.telemetryUnitCompact}>%</Text>
+                          </View>
+                          <View style={styles.telemetryItemCompact}>
+                            <Thermometer size={14} color="#FFB02E" />
+                            <Text style={styles.telemetryValueCompact}>
+                              {telemetry.temp !== null
+                                ? telemetry.temp.toFixed(1)
+                                : '--'}
+                            </Text>
+                            <Text style={styles.telemetryUnitCompact}>°C</Text>
+                          </View>
+                          <View style={styles.telemetryItemCompact}>
+                            <Battery size={14} color="#4F46E5" />
+                            <Text style={styles.telemetryValueCompact}>
+                              {telemetry.battery !== null
+                                ? Math.round(telemetry.battery)
+                                : '--'}
+                            </Text>
+                            <Text style={styles.telemetryUnitCompact}>%</Text>
+                          </View>
                         </View>
                       ) : (
                         <View style={styles.deviceBadgeOffline}>
@@ -433,58 +470,6 @@ export function MonitoringOverviewScreen() {
                         </View>
                       )}
                     </View>
-
-                    {/* 생체 신호 데이터 */}
-                    {hasDevice ? (
-                      <View style={styles.telemetryGrid}>
-                        <View style={styles.telemetryItem}>
-                          <Heart size={18} color="#F03F3F" />
-                          <Text style={styles.telemetryLabel}>심박수</Text>
-                          <Text style={styles.telemetryValue}>
-                            {telemetry.hr !== null
-                              ? Math.round(telemetry.hr)
-                              : '--'}
-                          </Text>
-                          <Text style={styles.telemetryUnit}>BPM</Text>
-                        </View>
-                        <View style={styles.telemetryItem}>
-                          <Droplet size={18} color="#2E8B7E" />
-                          <Text style={styles.telemetryLabel}>SpO2</Text>
-                          <Text style={styles.telemetryValue}>
-                            {telemetry.spo2 !== null
-                              ? Math.round(telemetry.spo2)
-                              : '--'}
-                          </Text>
-                          <Text style={styles.telemetryUnit}>%</Text>
-                        </View>
-                        <View style={styles.telemetryItem}>
-                          <Thermometer size={18} color="#FFB02E" />
-                          <Text style={styles.telemetryLabel}>체온</Text>
-                          <Text style={styles.telemetryValue}>
-                            {telemetry.temp !== null
-                              ? telemetry.temp.toFixed(1)
-                              : '--'}
-                          </Text>
-                          <Text style={styles.telemetryUnit}>°C</Text>
-                        </View>
-                        <View style={styles.telemetryItem}>
-                          <Battery size={18} color="#4F46E5" />
-                          <Text style={styles.telemetryLabel}>배터리</Text>
-                          <Text style={styles.telemetryValue}>
-                            {telemetry.battery !== null
-                              ? Math.round(telemetry.battery)
-                              : '--'}
-                          </Text>
-                          <Text style={styles.telemetryUnit}>%</Text>
-                        </View>
-                      </View>
-                    ) : (
-                      <View style={styles.noDeviceContainer}>
-                        <Text style={styles.noDeviceText}>
-                          연결된 디바이스가 없습니다
-                        </Text>
-                      </View>
-                    )}
                   </TouchableOpacity>
                 );
               })}
@@ -591,8 +576,8 @@ const styles = StyleSheet.create({
   },
   petCard: {
     backgroundColor: 'white',
-    borderRadius: 16,
-    padding: 16,
+    borderRadius: 12,
+    padding: 12,
     borderWidth: 1,
     borderColor: '#E5E7EB',
     shadowColor: '#000',
@@ -604,22 +589,27 @@ const styles = StyleSheet.create({
   petCardDisabled: {
     opacity: 0.6,
   },
-  petCardHeader: {
+  petCardContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
+    justifyContent: 'space-between',
+  },
+  petCardLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
   },
   petAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: '#E7F5F4',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 12,
+    marginRight: 10,
   },
   petAvatarText: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '700',
     color: '#2E8B7E',
   },
@@ -627,66 +617,55 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   petName: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
     color: '#111827',
-    marginBottom: 4,
+    marginBottom: 2,
   },
   petDetails: {
-    fontSize: 13,
+    fontSize: 12,
     color: '#6B7280',
     fontWeight: '500',
   },
   deviceBadge: {
     backgroundColor: '#E7F5F4',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 10,
   },
   deviceBadgeText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
     color: '#2E8B7E',
   },
   deviceBadgeOffline: {
     backgroundColor: '#F3F4F6',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 10,
   },
   deviceBadgeTextOffline: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
     color: '#9CA3AF',
   },
-  telemetryGrid: {
+  telemetryRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  telemetryItem: {
-    flex: 1,
-    minWidth: '45%',
-    backgroundColor: '#F9F9F9',
-    borderRadius: 12,
-    padding: 12,
     alignItems: 'center',
+    gap: 8,
   },
-  telemetryLabel: {
-    fontSize: 11,
-    color: '#6B7280',
-    fontWeight: '600',
-    marginTop: 6,
-    marginBottom: 4,
+  telemetryItemCompact: {
+    alignItems: 'center',
+    minWidth: 50,
   },
-  telemetryValue: {
-    fontSize: 20,
+  telemetryValueCompact: {
+    fontSize: 14,
     fontWeight: '700',
     color: '#111827',
-    marginBottom: 2,
+    marginTop: 2,
   },
-  telemetryUnit: {
-    fontSize: 10,
+  telemetryUnitCompact: {
+    fontSize: 9,
     color: '#9CA3AF',
     fontWeight: '500',
   },
