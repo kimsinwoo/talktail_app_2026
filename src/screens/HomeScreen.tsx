@@ -532,6 +532,21 @@ export function HomeScreen({
 
               return (
                 <View style={styles.petDependentContainer}>
+                  {/* 달력 아이콘 - 상태 체크 카드 위 오른쪽 */}
+                  <View style={styles.calendarIconContainer}>
+                    <TouchableOpacity
+                      style={styles.calendarIconButton}
+                      onPress={() => {
+                        navigateTo('Calendar', {
+                          petCode: pet.pet_code,
+                          petName: pet.name,
+                        });
+                      }}
+                      activeOpacity={0.7}>
+                      <Calendar size={20} color="#2E8B7E" />
+                    </TouchableOpacity>
+                  </View>
+
                   {/* 핵심 카드 1: 데일리 건강 체크 */}
                   <TouchableOpacity
                     style={[
@@ -759,7 +774,7 @@ export function HomeScreen({
             </TouchableOpacity>
 
             {/* 건강 리포트 */}
-            <TouchableOpacity
+            {/* <TouchableOpacity
               style={styles.serviceIconCard}
               activeOpacity={0.85}
               onPress={() => navigateTo('HealthReport')}>
@@ -767,7 +782,7 @@ export function HomeScreen({
                 <FileText size={24} color="#2E8B7E" />
               </View>
               <Text style={styles.serviceIconTitle}>건강 리포트</Text>
-            </TouchableOpacity>
+            </TouchableOpacity> */}
 
             {/* 건강 질문 도우미 */}
             <TouchableOpacity
@@ -1297,6 +1312,27 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#111111',
     fontWeight: '600',
+  },
+  // 달력 아이콘
+  calendarIconContainer: {
+    alignItems: 'flex-end',
+    marginBottom: 8,
+    paddingRight: 4,
+  },
+  calendarIconButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#E7F5F4',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#D8EFED',
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 1},
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
   // 서비스 아이콘 그리드
   serviceGrid: {

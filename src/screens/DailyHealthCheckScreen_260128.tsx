@@ -18,8 +18,6 @@ import {
   Circle,
   AlertCircle,
   MapPin,
-  Search,
-  X,
 } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
@@ -231,60 +229,6 @@ const SYMPTOM_CATEGORIES: SymptomCategory[] = [
           '상태를 주의 깊게 관찰해주세요',
         ],
       },
-      {
-        id: 'constipation',
-        title: '변을 못 보거나 힘들어해요',
-        checkItems: [
-          { id: 'days', question: '며칠째 변을 못 봤나요?', options: ['1일', '2일', '3일 이상'], selectedOption: null },
-          { id: 'hard', question: '배가 딱딱한가요?', options: ['네', '아니요'], selectedOption: null },
-          { id: 'eating', question: '식사는 잘 하나요?', options: ['잘 먹어요', '안 먹어요'], selectedOption: null },
-        ],
-        possibleCauses: [
-          '수분 섭취 부족',
-          '섬유질 부족',
-          '운동 부족',
-          '장 문제',
-        ],
-        hospitalAdvice: [
-          '3일 이상 변을 못 볼 때',
-          '배가 딱딱하고 아파할 때',
-          '구토가 동반될 때',
-          '식욕이 없을 때',
-        ],
-        immediateActions: [
-          '물을 충분히 제공해주세요',
-          '가벼운 산책으로 활동을 유도해주세요',
-          '복부를 부드럽게 마사지해주세요',
-          '변 상태를 기록해두세요',
-        ],
-      },
-      {
-        id: 'regurgitation',
-        title: '음식을 토하거나 트림을 자주 해요',
-        checkItems: [
-          { id: 'when', question: '언제 자주 하나요?', options: ['식사 직후', '식사 중간', '상관없음'], selectedOption: null },
-          { id: 'food', question: '음식이 그대로 나오나요?', options: ['네', '아니요'], selectedOption: null },
-          { id: 'frequency', question: '횟수는?', options: ['가끔', '자주'], selectedOption: null },
-        ],
-        possibleCauses: [
-          '급하게 먹는 습관',
-          '과식',
-          '식도 문제',
-          '위장 문제',
-        ],
-        hospitalAdvice: [
-          '자주 반복될 때',
-          '체중 감소가 있을 때',
-          '다른 증상이 동반될 때',
-          '음식을 전혀 못 먹을 때',
-        ],
-        immediateActions: [
-          '식사 속도를 늦춰주세요',
-          '한 번에 먹는 양을 줄여주세요',
-          '식사 후 활동을 제한해주세요',
-          '상태를 기록해두세요',
-        ],
-      },
     ],
   },
   {
@@ -401,87 +345,6 @@ const SYMPTOM_CATEGORIES: SymptomCategory[] = [
           '상태를 기록해두세요',
         ],
       },
-      {
-        id: 'noseDischarge',
-        title: '콧물이 나오거나 코를 자주 킁킁거려요',
-        checkItems: [
-          { id: 'color', question: '콧물 색깔은?', options: ['투명', '노란색/초록색', '없음'], selectedOption: null },
-          { id: 'blocked', question: '코가 막혀 보이나요?', options: ['네', '아니요'], selectedOption: null },
-          { id: 'sneeze', question: '재채기를 하나요?', options: ['네', '아니요'], selectedOption: null },
-        ],
-        possibleCauses: [
-          '알레르기',
-          '감기',
-          '비염',
-          '이물질',
-        ],
-        hospitalAdvice: [
-          '노란색/초록색 콧물이 나올 때',
-          '호흡 곤란이 동반될 때',
-          '식욕 저하가 있을 때',
-          '기침이 함께 나타날 때',
-        ],
-        immediateActions: [
-          '코 주변을 부드럽게 닦아주세요',
-          '환기가 잘 되는 곳으로 이동해주세요',
-          '물을 충분히 제공해주세요',
-          '코 상태를 사진으로 기록해두세요',
-        ],
-      },
-      {
-        id: 'pawProblem',
-        title: '발톱이나 발바닥에 문제가 있어요',
-        checkItems: [
-          { id: 'where', question: '어느 부위인가요?', options: ['발톱', '발바닥', '둘 다'], selectedOption: null },
-          { id: 'symptom', question: '어떤 증상인가요?', options: ['상처', '부어있음', '색이 변함'], selectedOption: null },
-          { id: 'limping', question: '절뚝거리나요?', options: ['네', '아니요'], selectedOption: null },
-        ],
-        possibleCauses: [
-          '발톱 부러짐',
-          '이물질',
-          '감염',
-          '화상',
-        ],
-        hospitalAdvice: [
-          '상처가 깊을 때',
-          '부어있을 때',
-          '절뚝거릴 때',
-          '피가 나거나 고름이 나올 때',
-        ],
-        immediateActions: [
-          '발바닥과 발톱 사이를 확인해주세요',
-          '이물질이 있으면 조심스럽게 제거해주세요',
-          '상처 부위를 깨끗하게 유지해주세요',
-          '걷는 모습을 영상으로 기록해두세요',
-        ],
-      },
-      {
-        id: 'hairLoss',
-        title: '털이 많이 빠지거나 벗겨져 있어요',
-        checkItems: [
-          { id: 'where', question: '어느 부위인가요?', options: ['온몸', '특정 부위'], selectedOption: null },
-          { id: 'skin', question: '피부가 보이나요?', options: ['네', '아니요'], selectedOption: null },
-          { id: 'itchy', question: '가려워 하나요?', options: ['네', '아니요'], selectedOption: null },
-        ],
-        possibleCauses: [
-          '계절성 탈모',
-          '스트레스',
-          '호르몬 문제',
-          '피부 질환',
-        ],
-        hospitalAdvice: [
-          '피부가 보일 정도로 빠질 때',
-          '가려움이 동반될 때',
-          '피부가 붉거나 부어있을 때',
-          '털 빠짐이 계속 진행될 때',
-        ],
-        immediateActions: [
-          '털 빠진 부위를 확인해주세요',
-          '피부 상태를 사진으로 기록해주세요',
-          '빗질로 털 상태를 확인해주세요',
-          '최근 환경 변화가 있었는지 생각해보세요',
-        ],
-      },
     ],
   },
   {
@@ -571,60 +434,6 @@ const SYMPTOM_CATEGORIES: SymptomCategory[] = [
           '최근 환경 변화가 있었는지 생각해보세요',
         ],
       },
-      {
-        id: 'aggression',
-        title: '평소보다 짖거나 공격적이에요',
-        checkItems: [
-          { id: 'when', question: '언제 그런가요?', options: ['특정 상황', '계속'], selectedOption: null },
-          { id: 'who', question: '누구에게인가요?', options: ['사람', '다른 동물', '둘 다'], selectedOption: null },
-          { id: 'change', question: '최근 환경 변화가 있었나요?', options: ['네', '아니요'], selectedOption: null },
-        ],
-        possibleCauses: [
-          '통증',
-          '스트레스',
-          '환경 변화',
-          '질병',
-        ],
-        hospitalAdvice: [
-          '갑자기 나타났을 때',
-          '통증이 의심될 때',
-          '다른 증상이 동반될 때',
-          '일상 생활에 지장이 있을 때',
-        ],
-        immediateActions: [
-          '자극을 주지 않고 지켜봐주세요',
-          '안전한 환경을 만들어주세요',
-          '행동을 영상으로 기록해주세요',
-          '최근 환경 변화가 있었는지 생각해보세요',
-        ],
-      },
-      {
-        id: 'anxiety',
-        title: '무서워하거나 불안해 보여요',
-        checkItems: [
-          { id: 'situation', question: '어떤 상황인가요?', options: ['천둥/번개', '사람', '소음', '기타'], selectedOption: null },
-          { id: 'hide', question: '숨거나 도망가나요?', options: ['네', '아니요'], selectedOption: null },
-          { id: 'tremble', question: '떨리나요?', options: ['네', '아니요'], selectedOption: null },
-        ],
-        possibleCauses: [
-          '과거 트라우마',
-          '환경 변화',
-          '노령 변화',
-          '스트레스',
-        ],
-        hospitalAdvice: [
-          '일상 생활에 지장이 있을 때',
-          '식욕 저하가 동반될 때',
-          '다른 증상이 함께 나타날 때',
-          '평소와 너무 다를 때',
-        ],
-        immediateActions: [
-          '안전한 공간을 제공해주세요',
-          '자극을 최소화해주세요',
-          '행동을 영상으로 기록해주세요',
-          '조용하고 편안한 환경을 만들어주세요',
-        ],
-      },
     ],
   },
   {
@@ -658,33 +467,6 @@ const SYMPTOM_CATEGORIES: SymptomCategory[] = [
           '안정을 취할 수 있게 해주세요',
           '물을 가까이 두되 억지로 먹이지 마세요',
           '호흡 상태를 영상으로 기록해두세요',
-        ],
-      },
-      {
-        id: 'snoring',
-        title: '코를 심하게 골거나 숨소리가 거칠어요',
-        checkItems: [
-          { id: 'when', question: '언제 그런가요?', options: ['잠잘 때', '깨어있을 때', '둘 다'], selectedOption: null },
-          { id: 'breathless', question: '숨이 가빠 보이나요?', options: ['네', '아니요'], selectedOption: null },
-          { id: 'weight', question: '최근 체중이 늘었나요?', options: ['네', '아니요', '모르겠어요'], selectedOption: null },
-        ],
-        possibleCauses: [
-          '비만',
-          '기도 문제',
-          '심장 문제',
-          '알레르기',
-        ],
-        hospitalAdvice: [
-          '숨이 가빠 보일 때',
-          '일상 활동에 지장이 있을 때',
-          '체중 증가가 동반될 때',
-          '다른 증상이 함께 나타날 때',
-        ],
-        immediateActions: [
-          '시원하고 환기가 잘 되는 곳으로 이동해주세요',
-          '안정을 취할 수 있게 해주세요',
-          '호흡 상태를 영상으로 기록해주세요',
-          '체중 변화를 확인해주세요',
         ],
       },
     ],
@@ -722,60 +504,6 @@ const SYMPTOM_CATEGORIES: SymptomCategory[] = [
           '걷는 모습을 영상으로 기록해두세요',
         ],
       },
-      {
-        id: 'stairsDifficulty',
-        title: '계단이나 높은 곳에 오르기 어려워해요',
-        checkItems: [
-          { id: 'when', question: '언제부터인가요?', options: ['최근', '오래전부터'], selectedOption: null },
-          { id: 'backLegs', question: '뒷다리를 쓰나요?', options: ['네', '아니요'], selectedOption: null },
-          { id: 'limping', question: '절뚝거리나요?', options: ['네', '아니요'], selectedOption: null },
-        ],
-        possibleCauses: [
-          '관절염',
-          '근육 약화',
-          '디스크 문제',
-          '노화',
-        ],
-        hospitalAdvice: [
-          '갑자기 어려워졌을 때',
-          '절뚝거릴 때',
-          '다른 증상이 동반될 때',
-          '일상 생활에 지장이 있을 때',
-        ],
-        immediateActions: [
-          '무리한 활동을 피하고 쉬게 해주세요',
-          '걷는 모습을 영상으로 기록해주세요',
-          '계단 사용을 최소화해주세요',
-          '상태를 주의 깊게 관찰해주세요',
-        ],
-      },
-      {
-        id: 'neckBackPain',
-        title: '목이나 등을 만지면 아파하거나 피해요',
-        checkItems: [
-          { id: 'where', question: '어느 부위인가요?', options: ['목', '등', '둘 다'], selectedOption: null },
-          { id: 'pain', question: '만지면 아파하나요?', options: ['네', '아니요'], selectedOption: null },
-          { id: 'movement', question: '움직임이 둔해졌나요?', options: ['네', '아니요'], selectedOption: null },
-        ],
-        possibleCauses: [
-          '디스크 문제',
-          '근육 긴장',
-          '외상',
-          '관절 문제',
-        ],
-        hospitalAdvice: [
-          '만지면 아파할 때',
-          '움직임이 둔해졌을 때',
-          '다른 증상이 동반될 때',
-          '일상 생활에 지장이 있을 때',
-        ],
-        immediateActions: [
-          '무리한 활동을 피하고 쉬게 해주세요',
-          '움직임을 영상으로 기록해주세요',
-          '안정을 취할 수 있게 해주세요',
-          '상태를 주의 깊게 관찰해주세요',
-        ],
-      },
     ],
   },
   {
@@ -809,122 +537,6 @@ const SYMPTOM_CATEGORIES: SymptomCategory[] = [
           '소변 색과 횟수를 기록해주세요',
           '소변 상태를 사진으로 기록해두세요',
           '배변 패드 위에서 소변을 보게 해서 확인해주세요',
-        ],
-      },
-      {
-        id: 'urineDifficulty',
-        title: '소변을 못 보거나 힘들어해요',
-        checkItems: [
-          { id: 'attempts', question: '몇 번 시도했나요?', options: ['여러 번', '계속'], selectedOption: null },
-          { id: 'pain', question: '아파해 하나요?', options: ['네', '아니요'], selectedOption: null },
-          { id: 'bloated', question: '배가 부른가요?', options: ['네', '아니요'], selectedOption: null },
-        ],
-        possibleCauses: [
-          '요로 결석',
-          '방광염',
-          '전립선 문제(수컷)',
-          '요로 감염',
-        ],
-        hospitalAdvice: [
-          '응급 상황 가능성 높음',
-          '즉시 병원 권장',
-          '소변을 전혀 보지 못할 때',
-          '아파할 때',
-        ],
-        immediateActions: [
-          '즉시 병원에 가주세요',
-          '상태를 기록해주세요',
-          '소변 시도 횟수를 확인해주세요',
-          '배 상태를 확인해주세요',
-        ],
-      },
-      {
-        id: 'indoorAccident',
-        title: '실내에서 소변/대변을 실수해요',
-        checkItems: [
-          { id: 'first', question: '평소에도 그랬나요?', options: ['처음이에요', '가끔 그랬어요'], selectedOption: null },
-          { id: 'type', question: '소변인가요 대변인가요?', options: ['소변', '대변', '둘 다'], selectedOption: null },
-          { id: 'sleep', question: '자는 동안인가요?', options: ['네', '아니요'], selectedOption: null },
-        ],
-        possibleCauses: [
-          '노령 변화',
-          '스트레스',
-          '요실금',
-          '질병',
-        ],
-        hospitalAdvice: [
-          '갑자기 시작되었을 때',
-          '자는 동안일 때',
-          '다른 증상이 동반될 때',
-          '일상 생활에 지장이 있을 때',
-        ],
-        immediateActions: [
-          '상태를 기록해주세요',
-          '최근 환경 변화가 있었는지 생각해보세요',
-          '다른 증상이 있는지 관찰해주세요',
-          '배변 패드를 준비해주세요',
-        ],
-      },
-    ],
-  },
-  {
-    id: 'oral',
-    title: '구강 건강',
-    icon: '🦷',
-    color: '#EC4899',
-    symptoms: [
-      {
-        id: 'badBreath',
-        title: '입에서 냄새가 심하게 나요',
-        checkItems: [
-          { id: 'when', question: '언제부터인가요?', options: ['최근', '오래전부터'], selectedOption: null },
-          { id: 'gums', question: '잇몸이 빨갛나요?', options: ['네', '아니요'], selectedOption: null },
-          { id: 'eating', question: '식사할 때 아파하나요?', options: ['네', '아니요'], selectedOption: null },
-        ],
-        possibleCauses: [
-          '치석',
-          '치주 질환',
-          '구강 감염',
-          '소화기 문제',
-        ],
-        hospitalAdvice: [
-          '잇몸이 빨갛거나 부을 때',
-          '식사 거부 시',
-          '다른 증상이 동반될 때',
-          '냄새가 점점 심해질 때',
-        ],
-        immediateActions: [
-          '구강 상태를 확인해주세요',
-          '치석이나 이물질을 확인해주세요',
-          '구강 상태를 사진으로 기록해주세요',
-          '상태를 기록해두세요',
-        ],
-      },
-      {
-        id: 'excessiveDrool',
-        title: '침을 평소보다 많이 흘려요',
-        checkItems: [
-          { id: 'when', question: '언제부터인가요?', options: ['오늘부터', '며칠 전부터'], selectedOption: null },
-          { id: 'mouth', question: '입을 잘 못 다물나요?', options: ['네', '아니요'], selectedOption: null },
-          { id: 'swallow', question: '삼키기 어려워 하나요?', options: ['네', '아니요'], selectedOption: null },
-        ],
-        possibleCauses: [
-          '구강 문제',
-          '이물질',
-          '신경 문제',
-          '구강 감염',
-        ],
-        hospitalAdvice: [
-          '갑자기 시작되었을 때',
-          '삼키기 어려울 때',
-          '다른 증상이 동반될 때',
-          '일상 생활에 지장이 있을 때',
-        ],
-        immediateActions: [
-          '구강 상태를 확인해주세요',
-          '이물질이 있는지 확인해주세요',
-          '구강 상태를 사진으로 기록해주세요',
-          '상태를 기록해두세요',
         ],
       },
     ],
@@ -1011,9 +623,6 @@ export function DailyHealthCheckScreen() {
   const [openCategories, setOpenCategories] = useState<Record<string, boolean>>({});
   const [openSymptomCards, setOpenSymptomCards] = useState<Record<string, boolean>>({});
   const [symptomCheckSelections, setSymptomCheckSelections] = useState<Record<string, Record<string, string>>>({});
-  
-  // 검색 기능
-  const [searchQuery, setSearchQuery] = useState('');
 
   const handleSelectOption = (itemId: string, value: string) => {
     setCheckItems(prev =>
@@ -1082,30 +691,6 @@ export function DailyHealthCheckScreen() {
       [symptomId]: !prev[symptomId]
     }));
   };
-
-  // 검색 필터링 함수
-  const filterSymptoms = (categories: SymptomCategory[], query: string): SymptomCategory[] => {
-    if (!query.trim()) return categories;
-    
-    const lowerQuery = query.toLowerCase();
-    return categories
-      .map(category => {
-        const filteredSymptoms = category.symptoms.filter(symptom =>
-          symptom.title.toLowerCase().includes(lowerQuery) ||
-          symptom.possibleCauses.some(cause => cause.toLowerCase().includes(lowerQuery)) ||
-          symptom.hospitalAdvice.some(advice => advice.toLowerCase().includes(lowerQuery)) ||
-          symptom.immediateActions.some(action => action.toLowerCase().includes(lowerQuery))
-        );
-        
-        if (filteredSymptoms.length > 0) {
-          return { ...category, symptoms: filteredSymptoms };
-        }
-        return null;
-      })
-      .filter((category): category is SymptomCategory => category !== null);
-  };
-
-  const filteredCategories = filterSymptoms(SYMPTOM_CATEGORIES, searchQuery);
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -1274,51 +859,10 @@ export function DailyHealthCheckScreen() {
               )}
             </TouchableOpacity>
 
-            {/* 검색 바 */}
-            {isSymptomSectionOpen && (
-              <View style={styles.searchContainer}>
-                <View style={styles.searchBar}>
-                  <Search size={18} color="#9CA3AF" />
-                  <TextInput
-                    style={styles.searchInput}
-                    placeholder="증상 검색 (예: 구토, 설사, 기침...)"
-                    placeholderTextColor="#9CA3AF"
-                    value={searchQuery}
-                    onChangeText={setSearchQuery}
-                    autoCapitalize="none"
-                  />
-                  {searchQuery.length > 0 && (
-                    <TouchableOpacity
-                      onPress={() => setSearchQuery('')}
-                      style={styles.searchClearButton}
-                      activeOpacity={0.7}
-                    >
-                      <X size={16} color="#9CA3AF" />
-                    </TouchableOpacity>
-                  )}
-                </View>
-                {searchQuery.length > 0 && (
-                  <Text style={styles.searchResultText}>
-                    {filteredCategories.reduce((sum, cat) => sum + cat.symptoms.length, 0)}개의 증상이 검색되었어요
-                  </Text>
-                )}
-              </View>
-            )}
-
             {/* 카테고리별 증상 리스트 */}
             {isSymptomSectionOpen && (
               <View style={styles.symptomCardsContainer}>
-                {filteredCategories.length === 0 && searchQuery.length > 0 ? (
-                  <View style={styles.noResultsContainer}>
-                    <Text style={styles.noResultsText}>
-                      "{searchQuery}"에 대한 검색 결과가 없어요
-                    </Text>
-                    <Text style={styles.noResultsSubtext}>
-                      다른 키워드로 검색해보세요
-                    </Text>
-                  </View>
-                ) : (
-                  filteredCategories.map((category) => {
+                {SYMPTOM_CATEGORIES.map((category) => {
                   const isCategoryOpen = openCategories[category.id] || false;
 
                   return (
@@ -1476,8 +1020,7 @@ export function DailyHealthCheckScreen() {
                       )}
                     </View>
                   );
-                  })
-                )}
+                })}
               </View>
             )}
           </View>
@@ -1959,54 +1502,5 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: 'white',
-  },
-  // 검색 스타일
-  searchContainer: {
-    marginTop: 12,
-    marginBottom: 8,
-  },
-  searchBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'white',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    gap: 8,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 14,
-    color: '#1A202C',
-    padding: 0,
-  },
-  searchClearButton: {
-    padding: 4,
-  },
-  searchResultText: {
-    fontSize: 12,
-    color: '#6B7280',
-    marginTop: 8,
-    textAlign: 'center',
-    fontWeight: '500',
-  },
-  noResultsContainer: {
-    padding: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  noResultsText: {
-    fontSize: 15,
-    color: '#6B7280',
-    fontWeight: '600',
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  noResultsSubtext: {
-    fontSize: 13,
-    color: '#9CA3AF',
-    textAlign: 'center',
   },
 });

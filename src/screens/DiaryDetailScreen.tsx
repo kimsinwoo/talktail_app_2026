@@ -26,6 +26,7 @@ import {
   CheckCircle2,
   Circle,
   Camera,
+  DollarSign,
 } from 'lucide-react-native';
 import Toast from 'react-native-toast-message';
 
@@ -36,6 +37,13 @@ interface CheckpointItem {
   id: string;
   label: string;
   checked: boolean;
+}
+
+// 지출 항목 타입
+interface ExpenseItem {
+  id: string;
+  category: string;
+  amount: string;
 }
 
 // 일기 항목 타입
@@ -49,6 +57,7 @@ interface DiaryEntry {
   activities: string[];
   photos: string[];
   checkpoints: CheckpointItem[];
+  expenses?: ExpenseItem[];
   petCode: string;
   petName: string;
 }
@@ -317,6 +326,46 @@ export function DiaryDetailScreen() {
           </View>
         </View>
 
+        {/* 지출 내역 */}
+        {diary.expenses && diary.expenses.length > 0 && (
+          <View style={styles.expenseSection}>
+            <View style={styles.expenseHeader}>
+              <Text style={styles.sectionLabel}>내 반려견을 위한 지출</Text>
+              <Text style={styles.totalExpenseText}>
+                총 {diary.expenses.reduce((sum, exp) => sum + parseInt(exp.amount), 0).toLocaleString('ko-KR')}원
+              </Text>
+            </View>
+            <View style={styles.expenseList}>
+              {diary.expenses.map(expense => {
+                const categoryInfo: Record<string, {label: string; emoji: string; color: string}> = {
+                  food: {label: '사료', emoji: '🍽️', color: '#FF9800'},
+                  snack: {label: '간식', emoji: '🦴', color: '#FFC107'},
+                  clothing: {label: '의류', emoji: '👕', color: '#2196F3'},
+                  toy: {label: '장난감', emoji: '🎾', color: '#9C27B0'},
+                  grooming: {label: '미용', emoji: '✂️', color: '#E91E63'},
+                  hospital: {label: '병원', emoji: '🏥', color: '#F44336'},
+                  supplies: {label: '용품', emoji: '🛍️', color: '#4CAF50'},
+                  other: {label: '기타', emoji: '📦', color: '#9E9E9E'},
+                };
+                const info = categoryInfo[expense.category] || categoryInfo.other;
+                return (
+                  <View key={expense.id} style={styles.expenseItem}>
+                    <View style={[styles.expenseCategoryBadge, {backgroundColor: `${info.color}15`}]}>
+                      <Text style={styles.expenseCategoryEmoji}>{info.emoji}</Text>
+                    </View>
+                    <View style={styles.expenseItemInfo}>
+                      <Text style={styles.expenseCategoryLabel}>{info.label}</Text>
+                      <Text style={styles.expenseAmount}>
+                        {parseInt(expense.amount).toLocaleString('ko-KR')}원
+                      </Text>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+        )}
+
         {/* 액션 버튼 */}
         <View style={styles.actionSection}>
           <TouchableOpacity
@@ -576,6 +625,60 @@ const styles = StyleSheet.create({
   activityText: {
     fontSize: 14,
     fontWeight: '600',
+  },
+  // 지출 섹션
+  expenseSection: {
+    backgroundColor: 'white',
+    marginTop: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+  },
+  expenseHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  totalExpenseText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#f0663f',
+  },
+  expenseList: {
+    gap: 10,
+  },
+  expenseItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#F8F9FA',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+  },
+  expenseCategoryBadge: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  expenseCategoryEmoji: {
+    fontSize: 22,
+  },
+  expenseItemInfo: {
+    flex: 1,
+  },
+  expenseCategoryLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333333',
+    marginBottom: 4,
+  },
+  expenseAmount: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#111111',
   },
   // 내용 섹션
   contentSection: {

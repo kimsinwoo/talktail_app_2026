@@ -27,6 +27,7 @@ import {
   Camera,
   CheckCircle2,
   Circle,
+  DollarSign,
 } from 'lucide-react-native';
 
 const {width: SCREEN_WIDTH} = Dimensions.get('window');
@@ -36,6 +37,13 @@ interface CheckpointItem {
   id: string;
   label: string;
   checked: boolean;
+}
+
+// 지출 항목 타입
+interface ExpenseItem {
+  id: string;
+  category: string;
+  amount: string;
 }
 
 // 일기 항목 타입
@@ -49,6 +57,7 @@ interface DiaryEntry {
   activities: string[];
   photos: string[];
   checkpoints: CheckpointItem[];
+  expenses?: ExpenseItem[];
   petCode: string;
   petName: string;
 }
@@ -75,6 +84,10 @@ const dummyDiaries: DiaryEntry[] = [
     ],
     petCode: 'DUMMY_1',
     petName: '초코',
+    expenses: [
+      {id: 'exp1', category: 'snack', amount: '15000'},
+      {id: 'exp2', category: 'toy', amount: '25000'},
+    ],
   },
   {
     id: '2',
@@ -95,6 +108,10 @@ const dummyDiaries: DiaryEntry[] = [
     ],
     petCode: 'DUMMY_1',
     petName: '초코',
+    expenses: [
+      {id: 'exp1', category: 'hospital', amount: '150000'},
+      {id: 'exp2', category: 'vaccination', amount: '80000'},
+    ],
   },
   {
     id: '3',
@@ -112,6 +129,9 @@ const dummyDiaries: DiaryEntry[] = [
     ],
     petCode: 'DUMMY_1',
     petName: '초코',
+    expenses: [
+      {id: 'exp1', category: 'food', amount: '45000'},
+    ],
   },
   {
     id: '4',
@@ -135,6 +155,10 @@ const dummyDiaries: DiaryEntry[] = [
     ],
     petCode: 'DUMMY_1',
     petName: '초코',
+    expenses: [
+      {id: 'exp1', category: 'snack', amount: '35000'},
+      {id: 'exp2', category: 'toy', amount: '18000'},
+    ],
   },
   {
     id: '5',
@@ -173,6 +197,11 @@ const dummyDiaries: DiaryEntry[] = [
     ],
     petCode: 'DUMMY_1',
     petName: '초코',
+    expenses: [
+      {id: 'exp1', category: 'grooming', amount: '60000'},
+      {id: 'exp2', category: 'clothing', amount: '45000'},
+      {id: 'exp3', category: 'supplies', amount: '25000'},
+    ],
   },
 ];
 
@@ -272,15 +301,39 @@ export function DiaryScreen() {
     navigation.navigate('DiaryDetail', {diary});
   };
 
-  // 체크포인트 완료율 계산
-  const getCheckpointProgress = (checkpoints: CheckpointItem[]) => {
-    if (checkpoints.length === 0) return 0;
-    const completed = checkpoints.filter(c => c.checked).length;
-    return Math.round((completed / checkpoints.length) * 100);
+  // 체크포인트 완료율 계산 - 주석처리됨
+  // const getCheckpointProgress = (checkpoints: CheckpointItem[]) => {
+  //   if (checkpoints.length === 0) return 0;
+  //   const completed = checkpoints.filter(c => c.checked).length;
+  //   return Math.round((completed / checkpoints.length) * 100);
+  // };
+
+  // 지출 카테고리 정보
+  const expenseCategoryInfo: Record<string, {label: string; emoji: string}> = {
+    food: {label: '사료', emoji: '🍽️'},
+    snack: {label: '간식', emoji: '🦴'},
+    clothing: {label: '의류', emoji: '👕'},
+    toy: {label: '장난감', emoji: '🎾'},
+    grooming: {label: '미용', emoji: '✂️'},
+    hospital: {label: '병원', emoji: '🏥'},
+    supplies: {label: '용품', emoji: '🛍️'},
+    other: {label: '기타', emoji: '📦'},
+  };
+
+  // 금액 포맷팅
+  const formatAmount = (amount: string) => {
+    return parseInt(amount).toLocaleString('ko-KR');
+  };
+
+  // 총 지출 금액 계산
+  const getTotalExpense = (expenses?: ExpenseItem[]) => {
+    if (!expenses || expenses.length === 0) return 0;
+    return expenses.reduce((sum, exp) => sum + parseInt(exp.amount), 0);
   };
 
   const renderDiaryItem = ({item}: {item: DiaryEntry}) => {
-    const checkpointProgress = getCheckpointProgress(item.checkpoints);
+    // const checkpointProgress = getCheckpointProgress(item.checkpoints);
+    const totalExpense = getTotalExpense(item.expenses);
 
     return (
       <TouchableOpacity
@@ -333,8 +386,8 @@ export function DiaryScreen() {
           </View>
         )}
 
-        {/* 체크포인트 진행률 */}
-        {item.checkpoints.length > 0 && (
+        {/* 체크포인트 진행률 - 주석처리됨 */}
+        {/* {item.checkpoints.length > 0 && (
           <View style={styles.checkpointSection}>
             <View style={styles.checkpointHeader}>
               <Text style={styles.checkpointLabel}>체크포인트</Text>
@@ -351,7 +404,6 @@ export function DiaryScreen() {
                 ]}
               />
             </View>
-            {/* 체크포인트 미리보기 (최대 3개) */}
             <View style={styles.checkpointPreview}>
               {item.checkpoints.slice(0, 3).map((checkpoint, index) => (
                 <View key={checkpoint.id} style={styles.checkpointItem}>
@@ -377,7 +429,7 @@ export function DiaryScreen() {
               )}
             </View>
           </View>
-        )}
+        )} */}
 
         {/* 활동 태그 */}
         {item.activities.length > 0 && (
@@ -401,6 +453,16 @@ export function DiaryScreen() {
             {item.activities.length > 3 && (
               <Text style={styles.moreActivities}>+{item.activities.length - 3}</Text>
             )}
+          </View>
+        )}
+
+        {/* 총 지출 금액 */}
+        {totalExpense > 0 && (
+          <View style={styles.expenseBadge}>
+            <DollarSign size={14} color="#f0663f" />
+            <Text style={styles.expenseBadgeText}>
+              총 {formatAmount(totalExpense.toString())}원
+            </Text>
           </View>
         )}
       </TouchableOpacity>
@@ -487,8 +549,10 @@ export function DiaryScreen() {
         <View style={styles.diaryListSection}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>최근 일기</Text>
-            <TouchableOpacity>
-              <Text style={styles.seeAllText}>전체보기</Text>
+            <TouchableOpacity
+              onPress={() => navigation.navigate('DiarySearch', {petCode, petName})}
+              activeOpacity={0.7}>
+              <Text style={styles.seeAllText}>일기 찾기</Text>
             </TouchableOpacity>
           </View>
 
@@ -824,6 +888,23 @@ const styles = StyleSheet.create({
     color: '#888888',
     marginTop: 4,
     marginLeft: 22,
+  },
+  // 지출 배지
+  expenseBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: '#FFF4E6',
+    borderRadius: 12,
+    alignSelf: 'flex-start',
+  },
+  expenseBadgeText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#f0663f',
   },
   // 활동 태그
   activitiesContainer: {

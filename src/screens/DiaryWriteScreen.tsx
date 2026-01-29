@@ -29,15 +29,16 @@ import {
   CheckCircle2,
   Circle,
   Trash2,
+  DollarSign,
 } from 'lucide-react-native';
 import Toast from 'react-native-toast-message';
 
 // 체크포인트 항목 타입
-interface CheckpointItem {
-  id: string;
-  label: string;
-  checked: boolean;
-}
+// interface CheckpointItem {
+//   id: string;
+//   label: string;
+//   checked: boolean;
+// }
 
 // 활동 목록
 const activityOptions = [
@@ -68,11 +69,30 @@ const moodOptions = [
 ];
 
 // 기본 체크포인트 템플릿
-const defaultCheckpoints: CheckpointItem[] = [
-  {id: 'c1', label: '아침 산책', checked: false},
-  {id: 'c2', label: '저녁 산책', checked: false},
-  {id: 'c3', label: '간식 급여', checked: false},
-  {id: 'c4', label: '양치', checked: false},
+// const defaultCheckpoints: CheckpointItem[] = [
+//   {id: 'c1', label: '아침 산책', checked: false},
+//   {id: 'c2', label: '저녁 산책', checked: false},
+//   {id: 'c3', label: '간식 급여', checked: false},
+//   {id: 'c4', label: '양치', checked: false},
+// ];
+
+// 지출 항목 타입
+interface ExpenseItem {
+  id: string;
+  category: string;
+  amount: string;
+}
+
+// 지출 카테고리 옵션
+const expenseCategories = [
+  {id: 'food', label: '사료', emoji: '🍽️', color: '#FF9800'},
+  {id: 'snack', label: '간식', emoji: '🦴', color: '#FFC107'},
+  {id: 'clothing', label: '의류', emoji: '👕', color: '#2196F3'},
+  {id: 'toy', label: '장난감', emoji: '🎾', color: '#9C27B0'},
+  {id: 'grooming', label: '미용', emoji: '✂️', color: '#E91E63'},
+  {id: 'hospital', label: '병원', emoji: '🏥', color: '#F44336'},
+  {id: 'supplies', label: '용품', emoji: '🛍️', color: '#4CAF50'},
+  {id: 'other', label: '기타', emoji: '📦', color: '#9E9E9E'},
 ];
 
 export function DiaryWriteScreen() {
@@ -87,10 +107,15 @@ export function DiaryWriteScreen() {
   const [mood, setMood] = useState<string>('');
   const [weather, setWeather] = useState<string>('');
   const [selectedActivities, setSelectedActivities] = useState<string[]>([]);
-  const [checkpoints, setCheckpoints] = useState<CheckpointItem[]>(defaultCheckpoints);
-  const [newCheckpointLabel, setNewCheckpointLabel] = useState('');
+  // const [checkpoints, setCheckpoints] = useState<CheckpointItem[]>(defaultCheckpoints);
+  // const [newCheckpointLabel, setNewCheckpointLabel] = useState('');
   const [photos, setPhotos] = useState<string[]>([]);
+  const [expenses, setExpenses] = useState<ExpenseItem[]>([]);
   const [isSaving, setIsSaving] = useState(false);
+  
+  // 지출 추가 폼 상태
+  const [newExpenseCategory, setNewExpenseCategory] = useState<string>('');
+  const [newExpenseAmount, setNewExpenseAmount] = useState<string>('');
 
   // 오늘 날짜
   const today = new Date();
@@ -109,39 +134,39 @@ export function DiaryWriteScreen() {
   };
 
   // 체크포인트 토글
-  const toggleCheckpoint = (checkpointId: string) => {
-    setCheckpoints(prev =>
-      prev.map(cp =>
-        cp.id === checkpointId ? {...cp, checked: !cp.checked} : cp,
-      ),
-    );
-  };
+  // const toggleCheckpoint = (checkpointId: string) => {
+  //   setCheckpoints(prev =>
+  //     prev.map(cp =>
+  //       cp.id === checkpointId ? {...cp, checked: !cp.checked} : cp,
+  //     ),
+  //   );
+  // };
 
   // 체크포인트 추가
-  const addCheckpoint = () => {
-    if (!newCheckpointLabel.trim()) {
-      Toast.show({
-        type: 'error',
-        text1: '체크포인트 내용을 입력해주세요',
-        position: 'bottom',
-      });
-      return;
-    }
+  // const addCheckpoint = () => {
+  //   if (!newCheckpointLabel.trim()) {
+  //     Toast.show({
+  //       type: 'error',
+  //       text1: '체크포인트 내용을 입력해주세요',
+  //       position: 'bottom',
+  //     });
+  //     return;
+  //   }
 
-    const newCheckpoint: CheckpointItem = {
-      id: `c${Date.now()}`,
-      label: newCheckpointLabel.trim(),
-      checked: false,
-    };
+  //   const newCheckpoint: CheckpointItem = {
+  //     id: `c${Date.now()}`,
+  //     label: newCheckpointLabel.trim(),
+  //     checked: false,
+  //   };
 
-    setCheckpoints(prev => [...prev, newCheckpoint]);
-    setNewCheckpointLabel('');
-  };
+  //   setCheckpoints(prev => [...prev, newCheckpoint]);
+  //   setNewCheckpointLabel('');
+  // };
 
   // 체크포인트 삭제
-  const removeCheckpoint = (checkpointId: string) => {
-    setCheckpoints(prev => prev.filter(cp => cp.id !== checkpointId));
-  };
+  // const removeCheckpoint = (checkpointId: string) => {
+  //   setCheckpoints(prev => prev.filter(cp => cp.id !== checkpointId));
+  // };
 
   // 사진 추가 (더미 - 실제로는 이미지 피커 사용)
   const handleAddPhoto = (type: 'camera' | 'gallery') => {
@@ -175,6 +200,58 @@ export function DiaryWriteScreen() {
   const removePhoto = (index: number) => {
     setPhotos(prev => prev.filter((_, i) => i !== index));
   };
+
+  // 지출 추가
+  const handleAddExpense = () => {
+    if (!newExpenseCategory) {
+      Toast.show({
+        type: 'error',
+        text1: '카테고리를 선택해주세요',
+        position: 'bottom',
+      });
+      return;
+    }
+
+    if (!newExpenseAmount.trim() || parseInt(newExpenseAmount.replace(/,/g, '')) <= 0) {
+      Toast.show({
+        type: 'error',
+        text1: '금액을 입력해주세요',
+        position: 'bottom',
+      });
+      return;
+    }
+
+    const newExpense: ExpenseItem = {
+      id: `exp_${Date.now()}`,
+      category: newExpenseCategory,
+      amount: newExpenseAmount.replace(/,/g, ''),
+    };
+
+    setExpenses(prev => [...prev, newExpense]);
+    setNewExpenseCategory('');
+    setNewExpenseAmount('');
+  };
+
+  // 지출 삭제
+  const removeExpense = (expenseId: string) => {
+    setExpenses(prev => prev.filter(exp => exp.id !== expenseId));
+  };
+
+  // 금액 포맷팅 (천 단위 구분)
+  const formatAmount = (amount: string) => {
+    const numAmount = amount.replace(/,/g, '');
+    if (!numAmount) return '';
+    return parseInt(numAmount).toLocaleString('ko-KR');
+  };
+
+  // 금액 입력 핸들러 (숫자만 입력, 자동 포맷팅)
+  const handleAmountChange = (text: string) => {
+    const numbersOnly = text.replace(/[^0-9]/g, '');
+    setNewExpenseAmount(numbersOnly);
+  };
+
+  // 총 지출 금액 계산
+  const totalExpense = expenses.reduce((sum, exp) => sum + parseInt(exp.amount), 0);
 
   // 저장 처리
   const handleSave = async () => {
@@ -210,7 +287,7 @@ export function DiaryWriteScreen() {
 
     try {
       // TODO: API 연동
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await new Promise<void>(resolve => setTimeout(resolve, 1000));
 
       Toast.show({
         type: 'success',
@@ -247,7 +324,7 @@ export function DiaryWriteScreen() {
   };
 
   // 체크포인트 완료 개수
-  const completedCheckpoints = checkpoints.filter(cp => cp.checked).length;
+  // const completedCheckpoints = checkpoints.filter(cp => cp.checked).length;
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -341,8 +418,8 @@ export function DiaryWriteScreen() {
             </View>
           </View>
 
-          {/* 체크포인트 */}
-          <View style={styles.section}>
+          {/* 체크포인트 - 주석처리됨 */}
+          {/* <View style={styles.section}>
             <View style={styles.sectionHeaderRow}>
               <Text style={styles.sectionLabel}>오늘의 체크포인트</Text>
               <Text style={styles.checkpointCount}>
@@ -350,7 +427,6 @@ export function DiaryWriteScreen() {
               </Text>
             </View>
 
-            {/* 체크포인트 목록 */}
             <View style={styles.checkpointList}>
               {checkpoints.map(checkpoint => (
                 <View key={checkpoint.id} style={styles.checkpointRow}>
@@ -379,7 +455,6 @@ export function DiaryWriteScreen() {
               ))}
             </View>
 
-            {/* 체크포인트 추가 */}
             <View style={styles.addCheckpointRow}>
               <TextInput
                 style={styles.addCheckpointInput}
@@ -396,7 +471,7 @@ export function DiaryWriteScreen() {
                 <Plus size={20} color="#7C4DFF" />
               </TouchableOpacity>
             </View>
-          </View>
+          </View> */}
 
           {/* 활동 선택 */}
           <View style={styles.section}>
@@ -483,6 +558,119 @@ export function DiaryWriteScreen() {
                 <ImageIcon size={24} color="#666666" />
                 <Text style={styles.addPhotoText}>앨범에서 선택</Text>
               </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* 내 반려견을 위한 지출 */}
+          <View style={styles.section}>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={styles.sectionLabel}>내 반려견을 위한 지출</Text>
+              {expenses.length > 0 && (
+                <Text style={styles.totalExpenseText}>
+                  총 {formatAmount(totalExpense.toString())}원
+                </Text>
+              )}
+            </View>
+
+            {/* 추가된 지출 목록 */}
+            {expenses.length > 0 && (
+              <View style={styles.expenseList}>
+                {expenses.map(expense => {
+                  const category = expenseCategories.find(cat => cat.id === expense.category);
+                  return (
+                    <View key={expense.id} style={styles.expenseItem}>
+                      <View style={styles.expenseItemLeft}>
+                        <View
+                          style={[
+                            styles.expenseCategoryBadge,
+                            {backgroundColor: `${category?.color}15`},
+                          ]}>
+                          <Text style={styles.expenseCategoryEmoji}>
+                            {category?.emoji}
+                          </Text>
+                        </View>
+                        <View style={styles.expenseItemInfo}>
+                          <Text style={styles.expenseCategoryLabel}>
+                            {category?.label}
+                          </Text>
+                          <Text style={styles.expenseAmount}>
+                            {formatAmount(expense.amount)}원
+                          </Text>
+                        </View>
+                      </View>
+                      <TouchableOpacity
+                        style={styles.expenseDeleteButton}
+                        onPress={() => removeExpense(expense.id)}
+                        activeOpacity={0.7}>
+                        <X size={16} color="#CCCCCC" />
+                      </TouchableOpacity>
+                    </View>
+                  );
+                })}
+              </View>
+            )}
+
+            {/* 지출 추가 폼 */}
+            <View style={styles.addExpenseContainer}>
+              {/* 카테고리 선택 */}
+              <View style={styles.expenseCategoryGrid}>
+                {expenseCategories.map(category => {
+                  const isSelected = newExpenseCategory === category.id;
+                  return (
+                    <TouchableOpacity
+                      key={category.id}
+                      style={[
+                        styles.expenseCategoryButton,
+                        isSelected && {
+                          backgroundColor: `${category.color}15`,
+                          borderColor: category.color,
+                          borderWidth: 2,
+                        },
+                      ]}
+                      onPress={() => setNewExpenseCategory(category.id)}
+                      activeOpacity={0.7}>
+                      <Text style={styles.expenseCategoryButtonEmoji}>
+                        {category.emoji}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.expenseCategoryButtonLabel,
+                          isSelected && {color: category.color, fontWeight: '700'},
+                        ]}>
+                        {category.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              {/* 금액 입력 및 추가 */}
+              <View style={styles.expenseInputRow}>
+                <View style={styles.expenseAmountInputContainer}>
+                  <DollarSign size={18} color="#666666" style={styles.expenseAmountIcon} />
+                  <TextInput
+                    style={styles.expenseAmountInput}
+                    placeholder="금액 입력"
+                    placeholderTextColor="#CCCCCC"
+                    value={formatAmount(newExpenseAmount)}
+                    onChangeText={handleAmountChange}
+                    keyboardType="numeric"
+                    maxLength={10}
+                  />
+                  <Text style={styles.expenseAmountUnit}>원</Text>
+                </View>
+                <TouchableOpacity
+                  style={[
+                    styles.addExpenseButton,
+                    (!newExpenseCategory || !newExpenseAmount) &&
+                      styles.addExpenseButtonDisabled,
+                  ]}
+                  onPress={handleAddExpense}
+                  disabled={!newExpenseCategory || !newExpenseAmount}
+                  activeOpacity={0.8}>
+                  <Plus size={20} color="white" />
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
 
@@ -745,6 +933,129 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     color: '#666666',
+  },
+  // 지출 섹션
+  totalExpenseText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#f0663f',
+    marginBottom: 12,
+  },
+  expenseList: {
+    gap: 10,
+    marginBottom: 16,
+  },
+  expenseItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F8F9FA',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+  },
+  expenseItemLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  expenseCategoryBadge: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  expenseCategoryEmoji: {
+    fontSize: 20,
+  },
+  expenseItemInfo: {
+    flex: 1,
+  },
+  expenseCategoryLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333333',
+    marginBottom: 2,
+  },
+  expenseAmount: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#111111',
+  },
+  expenseDeleteButton: {
+    padding: 4,
+  },
+  addExpenseContainer: {
+    gap: 16,
+  },
+  expenseCategoryGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  expenseCategoryButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#EEEEEE',
+    backgroundColor: 'white',
+    minWidth: 70,
+    gap: 4,
+  },
+  expenseCategoryButtonEmoji: {
+    fontSize: 20,
+  },
+  expenseCategoryButtonLabel: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#666666',
+  },
+  expenseInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  expenseAmountInputContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F5F5F5',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    gap: 8,
+  },
+  expenseAmountIcon: {
+    marginRight: 4,
+  },
+  expenseAmountInput: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#111111',
+    padding: 0,
+  },
+  expenseAmountUnit: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#888888',
+  },
+  addExpenseButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: '#f0663f',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  addExpenseButtonDisabled: {
+    backgroundColor: '#CCCCCC',
+    opacity: 0.5,
   },
 });
 
