@@ -36,9 +36,11 @@ import { orgStore } from './src/store/orgStore';
 
 import { HomeScreen } from './src/screens/HomeScreen';
 import { MonitoringScreen } from './src/screens/MonitoringScreen';
+import { MonitoringScreen as MonitoringScreen_260122 } from './src/screens/MonitoringScreen_260122';
 import { StoreScreen } from './src/screens/StoreScreen';
 import { MonitoringDetailScreen } from './src/screens/MonitoringDetailScreen';
 import { DeviceManagementScreen } from './src/screens/DeviceManagementScreen';
+import { MonitoringOverviewScreen } from './src/screens/MonitoringOverviewScreen';
 
 import { MyPageScreen } from './src/screens/MyPageScreen';
 import { LoginScreen } from './src/screens/LoginScreen';
@@ -74,6 +76,7 @@ import { RecentStatusTrendScreen } from './src/screens/RecentStatusTrendScreen';
 import { HealthConsultationScreen } from './src/screens/HealthConsultationScreen';
 import { ImageGenerationScreen } from './src/screens/ImageGenerationScreen';
 import { CalendarScreen } from './src/screens/CalendarScreen';
+import { DiarySearchScreen } from './src/screens/DiarySearchScreen';
 import { hasToken, saveConnectedDeviceId } from './src/utils/storage';
 import { apiService } from './src/services/ApiService';
 
@@ -123,6 +126,7 @@ export type RootStackParamList = {
   Diary: { petCode?: string; petName?: string } | undefined;
   DiaryWrite: { petCode?: string; petName?: string } | undefined;
   DiaryDetail: { diary: any } | undefined;
+  DiarySearch: { petCode?: string; petName?: string } | undefined;
   MonitoringDetail:
     | { petCode: string; deviceMac: string; petName?: string }
     | undefined;
@@ -558,7 +562,7 @@ function App(): React.JSX.Element {
                       ),
                     }}
                   >
-                    {props => <MonitoringDetailScreen />}
+                    {props => <MonitoringOverviewScreen />}
                   </Tab.Screen>
                   {/* 스토어 기능 임시 비활성화
                           <Tab.Screen
@@ -654,6 +658,7 @@ function App(): React.JSX.Element {
             <Stack.Screen name="Diary" component={DiaryScreen} />
             <Stack.Screen name="DiaryWrite" component={DiaryWriteScreen} />
             <Stack.Screen name="DiaryDetail" component={DiaryDetailScreen} />
+            <Stack.Screen name="DiarySearch" component={DiarySearchScreen} />
             <Stack.Screen
               name="MonitoringDetail"
               component={MonitoringDetailScreen}

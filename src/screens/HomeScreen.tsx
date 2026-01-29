@@ -767,7 +767,7 @@ export function HomeScreen({
             </TouchableOpacity>
 
             {/* 건강 리포트 */}
-            <TouchableOpacity
+            {/* <TouchableOpacity
               style={styles.serviceIconCard}
               activeOpacity={0.85}
               onPress={() => navigateTo('HealthReport')}>
@@ -775,7 +775,7 @@ export function HomeScreen({
                 <FileText size={24} color="#2E8B7E" />
               </View>
               <Text style={styles.serviceIconTitle}>건강 리포트</Text>
-            </TouchableOpacity>
+            </TouchableOpacity> */}
 
             {/* 건강 질문 도우미 */}
             <TouchableOpacity
