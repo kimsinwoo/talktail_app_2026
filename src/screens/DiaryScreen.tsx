@@ -1,4 +1,4 @@
-import React, {useState, useMemo} from 'react';
+import React, {useState, useMemo, useEffect} from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,8 @@ import {
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {useNavigation, useRoute} from '@react-navigation/native';
+import {userStore} from '../store/userStore';
+import {getDiaryList} from '../services/diaryApi';
 import {
   ArrowLeft,
   Plus,
@@ -255,18 +257,47 @@ const activityTextColors: Record<string, string> = {
 export function DiaryScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
-  const petCode = route.params?.petCode;
-  const petName = route.params?.petName || '반려동물';
+  const pets = userStore(s => s.pets);
+  const petCodeFromRoute = route.params?.petCode;
+  const petNameFromRoute = route.params?.petName;
+  const currentPet = pets.find(p => p.pet_code === petCodeFromRoute) || pets[0];
+  const petCode = petCodeFromRoute || currentPet?.pet_code;
+  const petName = petNameFromRoute || currentPet?.name || '반려동물';
 
-  // 더미 데이터를 현재 반려동물 정보로 변환
-  const diaries = useMemo(() => {
-    // 더미 데이터에 현재 반려동물 정보를 적용
-    return dummyDiaries.map(d => ({
-      ...d,
-      petCode: petCode || d.petCode,
-      petName: petName || d.petName,
-    }));
+  const [apiList, setApiList] = useState<DiaryEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!petCode) {
+      setApiList([]);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    getDiaryList(petCode, 1, 50)
+      .then(({ list }) => {
+        setApiList(
+          list.map((e) => ({
+            id: String(e.id),
+            date: e.date,
+            title: e.title,
+            content: e.content,
+            mood: e.mood,
+            weather: e.weather,
+            activities: e.activities || [],
+            photos: e.photos || [],
+            checkpoints: e.checkpoints || [],
+            petCode,
+            petName,
+            expenses: [],
+          })),
+        );
+      })
+      .catch(() => setApiList([]))
+      .finally(() => setLoading(false));
   }, [petCode, petName]);
+
+  const diaries = useMemo(() => apiList, [apiList]);
 
   // 이번 달 일기 개수
   const thisMonthCount = useMemo(() => {

@@ -15,7 +15,7 @@ import {
   DeviceEventEmitter,
 } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import Toast from 'react-native-toast-message';
@@ -46,6 +46,9 @@ import { MyPageScreen } from './src/screens/MyPageScreen';
 import { LoginScreen } from './src/screens/LoginScreen';
 import SignupScreen from './src/screens/SignupScreen';
 import SignupConsentScreen from './src/screens/SignupConsentScreen';
+import { FindIdScreen } from './src/screens/FindIdScreen';
+import { ForgotPasswordScreen } from './src/screens/ForgotPasswordScreen';
+import { ResetPasswordScreen } from './src/screens/ResetPasswordScreen';
 import CustomerSupportScreen from './src/screens/CustomerSupportScreen';
 import FavoritesScreen from './src/screens/FavoritesScreen';
 import OrderHistoryScreen from './src/screens/OrderHistoryScreen';
@@ -80,6 +83,7 @@ import { CalendarScreen } from './src/screens/CalendarScreen';
 import { DiarySearchScreen } from './src/screens/DiarySearchScreen';
 import { hasToken, saveConnectedDeviceId } from './src/utils/storage';
 import { apiService } from './src/services/ApiService';
+import { FirebaseMessagingService } from './src/services/FirebaseMessagingService';
 
 export type TabParamList = {
   Home: undefined;
@@ -141,11 +145,15 @@ export type RootStackParamList = {
 };
 
 const Tab = createBottomTabNavigator<TabParamList>();
+const navigationRef = createNavigationContainerRef<RootStackParamList>();
 const Stack = createNativeStackNavigator<RootStackParamList>();
 type AuthStackParamList = {
   Login: undefined;
   Signup: undefined;
   SignupConsent: undefined;
+  FindId: undefined;
+  ForgotPassword: undefined;
+  ResetPassword: { email?: string } | undefined;
 };
 const AuthStack = createNativeStackNavigator<AuthStackParamList>();
 
@@ -305,7 +313,7 @@ function App(): React.JSX.Element {
     });
   }, [isLoggedIn, fetchPets]);
 
-  // ✅ 로그인 상태에서 서버 Notification 폴링 시작/중지
+  // ✅ 로그인 상태에서 서버 Notification 폴링 시작/중지 + FCM 초기화 및 토큰 등록
   useEffect(() => {
     if (!isLoggedIn) {
       backendNotificationService.stopPolling();
@@ -318,6 +326,13 @@ function App(): React.JSX.Element {
     hubSocketService.connect().catch(() => {
       // 화면에서 토스트/상태로 안내 (여기서는 크래시만 방지)
     });
+    // FCM: 알림 클릭 시 디바이스 상세 이동 + 토큰 등록
+    try {
+      FirebaseMessagingService.initialize(navigationRef);
+      FirebaseMessagingService.registerToken();
+    } catch (e) {
+      // @react-native-firebase 미설치 시 무시
+    }
     return () => {
       backendNotificationService.stopPolling();
       hubSocketService.disconnect();
@@ -496,6 +511,9 @@ function App(): React.JSX.Element {
                 />
               )}
             </AuthStack.Screen>
+            <AuthStack.Screen name="FindId" component={FindIdScreen} />
+            <AuthStack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
+            <AuthStack.Screen name="ResetPassword" component={ResetPasswordScreen} />
           </AuthStack.Navigator>
         </NavigationContainer>
         <Toast />
@@ -510,7 +528,7 @@ function App(): React.JSX.Element {
           barStyle={isDarkMode ? 'light-content' : 'dark-content'}
           backgroundColor="#F9F9F9"
         />
-        <NavigationContainer>
+        <NavigationContainer ref={navigationRef}>
           <Stack.Navigator screenOptions={{ headerShown: false }}>
             <Stack.Screen name="MainTabs">
               {() => (

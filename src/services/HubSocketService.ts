@@ -60,9 +60,9 @@ class HubSocketService {
     return !!this.socket?.connected;
   }
 
-  // ✅ 디버깅용: 실제로 Socket.IO로 들어오는 payload를 그대로 확인
-  // 모든 데이터를 상세하게 로깅
+  // 디버깅용: 개발 환경에서만 Socket.IO payload 로깅 (프로덕션 no-op)
   private debugLog(event: string, payload: unknown) {
+    if (!__DEV__) return;
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const p = payload as any;
@@ -76,8 +76,6 @@ class HubSocketService {
               : undefined;
       const deviceId = typeof p?.deviceId === 'string' ? p.deviceId : undefined;
       const type = typeof p?.type === 'string' ? p.type : undefined;
-      
-      // ✅ 전체 payload를 JSON으로 변환하여 로깅
       let payloadJson: string | undefined;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let payloadData: any = payload;
@@ -87,40 +85,34 @@ class HubSocketService {
       } catch {
         payloadJson = String(payload);
       }
-
       console.log(`[HubSocketService] 📥 ${event}`, {
         event,
         hubId,
         deviceId,
         type,
         timestamp: new Date().toISOString(),
-        payload: payloadData, // 전체 payload 객체
-        payloadJson: payloadJson.length > 1000 ? payloadJson.slice(0, 1000) + '...' : payloadJson, // JSON 문자열 (긴 경우 일부만)
+        payload: payloadData,
+        payloadJson: payloadJson && payloadJson.length > 1000 ? payloadJson.slice(0, 1000) + '...' : payloadJson,
       });
     } catch (e) {
-      console.log(`[HubSocketService] 📥 ${event} (log failed)`, {
-        event,
-        error: e,
-        payload: String(payload),
-      });
+      console.log(`[HubSocketService] 📥 ${event} (log failed)`, {event, error: e, payload: String(payload)});
     }
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private emitToLocal(event: string, ...args: any[]) {
     const set = this.listeners.get(event);
-    console.log(`[HubSocketService] emitToLocal("${event}")`, {
-      event,
-      hasListeners: !!set,
-      listenerCount: set?.size || 0,
-      argsCount: args.length,
-      firstArgType: args.length > 0 ? typeof args[0] : 'none',
-    });
+    if (__DEV__) {
+      console.log(`[HubSocketService] emitToLocal("${event}")`, {
+        event,
+        hasListeners: !!set,
+        listenerCount: set?.size || 0,
+      });
+    }
     if (!set || set.size === 0) {
-      console.warn(`[HubSocketService] ⚠️ No listeners for event "${event}"`);
+      if (__DEV__) console.warn(`[HubSocketService] ⚠️ No listeners for event "${event}"`);
       return;
     }
-    console.log(`[HubSocketService] 📢 Calling ${set.size} listener(s) for "${event}"`);
     for (const cb of set) {
       try {
         cb(...args);
@@ -128,7 +120,6 @@ class HubSocketService {
         console.error(`[HubSocketService] ❌ Listener error for "${event}":`, error);
       }
     }
-    console.log(`[HubSocketService] ✅ All listeners called for "${event}"`);
   }
 
   on(event: string, cb: Listener) {
@@ -328,6 +319,25 @@ class HubSocketService {
       this.debugLog('MQTT_READY', payload);
       this.emitToLocal('MQTT_READY', payload);
     });
+
+    // ✅ 백엔드에서 MQTT disconnected:mac 수신 시 전달 → 해당 디바이스 오프라인 처리
+    s.on('DEVICE_DISCONNECTED', (payload: any) => {
+      const hubId =
+        typeof payload?.hubId === 'string'
+          ? payload.hubId
+          : typeof payload?.hub_address === 'string'
+            ? payload.hub_address
+            : null;
+      const deviceMac =
+        typeof payload?.deviceMac === 'string' ? payload.deviceMac : null;
+      if (hubId && deviceMac) {
+        const current = this.connectedDevicesByHub.get(hubId) || [];
+        const next = current.filter((mac: string) => mac !== deviceMac);
+        this.applyConnectedDevices(hubId, next);
+        console.log('[HubSocketService] DEVICE_DISCONNECTED 적용:', {hubId, deviceMac});
+      }
+      this.emitToLocal('DEVICE_DISCONNECTED', payload);
+    });
     s.on('HUB_ACTIVITY', (payload: any) => {
       // ✅ 모든 수신 데이터를 콘솔에 출력
       console.log(`[HubSocketService] 📥 Socket.IO Event: "HUB_ACTIVITY"`, {
@@ -358,7 +368,7 @@ class HubSocketService {
     if (typeof (s as any).onAny === 'function') {
       (s as any).onAny((event: string, ...args: any[]) => {
         // 이미 위에서 등록한 이벤트는 중복 로깅 방지
-        if (!['connect', 'disconnect', 'connect_error', 'connected', 'CONTROL_ACK', 'CONTROL_RESULT', 'TELEMETRY', 'CONNECTED_DEVICES', 'MQTT_READY', 'HUB_ACTIVITY'].includes(event)) {
+        if (!['connect', 'disconnect', 'connect_error', 'connected', 'CONTROL_ACK', 'CONTROL_RESULT', 'TELEMETRY', 'CONNECTED_DEVICES', 'MQTT_READY', 'HUB_ACTIVITY', 'DEVICE_DISCONNECTED'].includes(event)) {
           console.log(`[HubSocketService] 📥 Socket.IO Unknown Event: "${event}"`, {
             event,
             timestamp: new Date().toISOString(),

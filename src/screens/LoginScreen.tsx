@@ -1,4 +1,4 @@
-import React, {useState, useEffect} from 'react';
+import React, {useState, useEffect, useCallback} from 'react';
 import {
   SafeAreaView,
   StyleSheet,
@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   KeyboardAvoidingView,
   Platform,
+  Linking,
 } from 'react-native';
 import {useIsFocused} from '@react-navigation/native';
 import {deviceStore} from '../store/deviceStore';
@@ -33,6 +34,11 @@ export function LoginScreen({onLoginSuccess, navigation}: LoginScreenProps) {
     loginLoading,
     offLoginSuccess,
     offLoginError,
+    startGoogleOAuth,
+    handleGoogleOAuthCallback,
+    googleLoginLoading,
+    googleLoginError,
+    offGoogleLoginError,
   } = deviceStore();
 
   // 로그인 성공 처리
@@ -62,6 +68,45 @@ export function LoginScreen({onLoginSuccess, navigation}: LoginScreenProps) {
     }
   }, [loginError, isFocused, offLoginError]);
 
+  // Google 로그인 에러 처리
+  useEffect(() => {
+    if (googleLoginError && isFocused) {
+      Toast.show({
+        type: 'error',
+        text1: 'Google 로그인 실패',
+        text2: googleLoginError,
+      });
+      offGoogleLoginError();
+    }
+  }, [googleLoginError, isFocused, offGoogleLoginError]);
+
+  // 딥링크: talktail://oauth/google/callback?code=...&state=...
+  const handleOpenURL = useCallback(
+    (url: string) => {
+      const prefix = 'talktail://oauth/google/callback';
+      if (!url.startsWith(prefix)) return;
+      const q = url.indexOf('?');
+      if (q === -1) return;
+      const params = new URLSearchParams(url.slice(q));
+      const code = params.get('code');
+      const state = params.get('state');
+      if (code && state) handleGoogleOAuthCallback(code, state);
+    },
+    [handleGoogleOAuthCallback],
+  );
+
+  useEffect(() => {
+    const sub = Linking.addEventListener('url', ({url}) => handleOpenURL(url));
+    Linking.getInitialURL().then(initial => {
+      if (initial) handleOpenURL(initial);
+    });
+    return () => sub.remove();
+  }, [handleOpenURL]);
+
+  const onPressGoogleLogin = async () => {
+    const url = await startGoogleOAuth();
+    if (url) Linking.openURL(url);
+  };
 
   const validateForm = (): boolean => {
     const newErrors: {[key: string]: string} = {};
@@ -159,6 +204,19 @@ export function LoginScreen({onLoginSuccess, navigation}: LoginScreenProps) {
             </TouchableOpacity>
 
             <TouchableOpacity
+              style={[
+                styles.googleButton,
+                (loginLoading || googleLoginLoading) && styles.submitButtonDisabled,
+              ]}
+              onPress={onPressGoogleLogin}
+              disabled={loginLoading || googleLoginLoading}
+              activeOpacity={0.8}>
+              <Text style={styles.googleButtonText}>
+                {googleLoginLoading ? 'Google 로그인 중...' : 'Google로 로그인'}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
               onPress={() => navigation?.navigate('Signup')}
               style={styles.signupButton}
               activeOpacity={0.8}>
@@ -166,16 +224,16 @@ export function LoginScreen({onLoginSuccess, navigation}: LoginScreenProps) {
             </TouchableOpacity>
 
             <View style={styles.findAccountContainer}>
-              <TouchableOpacity disabled>
-                <Text style={styles.findAccountText}>
-                  아이디 찾기(준비중)
-                </Text>
+              <TouchableOpacity
+                onPress={() => navigation?.navigate('FindId')}
+                activeOpacity={0.7}>
+                <Text style={styles.findAccountText}>아이디 찾기</Text>
               </TouchableOpacity>
               <Text style={styles.findAccountDivider}>|</Text>
-              <TouchableOpacity disabled>
-                <Text style={styles.findAccountText}>
-                  비밀번호 찾기(준비중)
-                </Text>
+              <TouchableOpacity
+                onPress={() => navigation?.navigate('ForgotPassword')}
+                activeOpacity={0.7}>
+                <Text style={styles.findAccountText}>비밀번호 찾기</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -262,6 +320,22 @@ const styles = StyleSheet.create({
   submitButtonText: {
     color: '#FFFFFF',
     fontSize: 18,
+    fontWeight: '600',
+  },
+  googleButton: {
+    width: '100%',
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  googleButtonText: {
+    color: '#333333',
+    fontSize: 16,
     fontWeight: '600',
   },
   signupButton: {

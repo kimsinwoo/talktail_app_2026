@@ -82,13 +82,11 @@ export const userStore = create<UserStore>((set, get) => ({
   deleteError: null,
   deleteSuccess: false,
 
-  /** hub_project/back: GET /api/pet → { success, count, data: [...] } */
   fetchPets: async () => {
     try {
       set({loadLoading: true, loadError: null, loadSuccess: false});
-      const response = await apiService.get<{success: boolean; data: any[]; count?: number}>('/pet');
-      const body = (response as any)?.data;
-      const rows = Array.isArray(body?.data) ? body.data : (body?.pets ?? (Array.isArray(body) ? body : []));
+      const response = await apiService.get<{success: boolean; data: {pets: any[]; pagination?: any}}>('/pets');
+      const rows = (response as any)?.data?.pets ?? (response as any)?.data ?? [];
       const nextPets: Pet[] = (Array.isArray(rows) ? rows : []).map((p: any) => ({
         pet_code: p.pet_code ?? String(p.id),
         name: p.name,

@@ -124,12 +124,12 @@ export const orgStore = create<OrgStore>((set, get) => ({
       if (!token) {
         throw new Error('토큰이 없습니다.');
       }
-      const response = await apiService.post<{data: Org}>('/org/load', token);
-      set({org: response.data, loadLoading: false});
+      const response = await apiService.post<Org>('/org/load', {});
+      set({org: response && typeof response === 'object' ? response as Org : get().org, loadLoading: false});
     } catch (error) {
       console.error(error);
       set({
-        loadError: '기관 정보를 불러오는데 실패했습니다.',
+        loadError: '사용자 정보를 불러오는데 실패했습니다.',
         loadLoading: false,
       });
       throw error;
@@ -143,12 +143,12 @@ export const orgStore = create<OrgStore>((set, get) => ({
       if (!token) {
         throw new Error('토큰이 없습니다.');
       }
-      const response = await apiService.post<{data: Org}>('/org/update', org);
-      set({org: response.data, updateLoading: false});
+      const response = await apiService.post<Org>('/org/update', org);
+      set({org: response && typeof response === 'object' ? (response as Org) : org, updateLoading: false});
     } catch (error) {
       console.error(error);
       set({
-        updateError: '기관 정보 업데이트에 실패했습니다.',
+        updateError: '사용자 정보 수정에 실패했습니다.',
         updateLoading: false,
       });
       throw error;
@@ -163,7 +163,6 @@ export const orgStore = create<OrgStore>((set, get) => ({
         throw new Error('토큰이 없습니다.');
       }
       const sendData = {
-        token,
         org_pw: info.org_pw,
         org_new_pw: info.org_new_pw,
       };
@@ -193,7 +192,6 @@ export const orgStore = create<OrgStore>((set, get) => ({
         throw new Error('토큰이 없습니다.');
       }
       const sendData = {
-        token,
         org_name: info.org_name,
         org_address: info.org_address,
         org_phone: info.org_phone,
@@ -261,12 +259,10 @@ export const orgStore = create<OrgStore>((set, get) => ({
       if (!token) {
         throw new Error('토큰이 없습니다.');
       }
-      const response = await apiService.post<{data: Agree}>('/org/loadAgree', {
-        token,
-      });
-      if (response.data) {
+      const response = await apiService.post<Agree>('/org/loadAgree', {});
+      if (response && typeof response === 'object') {
         set({
-          agree: response.data,
+          agree: response as Agree,
           loadAgreeLoading: false,
           loadAgreeSuccess: true,
         });
@@ -275,7 +271,7 @@ export const orgStore = create<OrgStore>((set, get) => ({
       console.error(error);
       set({
         loadAgreeLoading: false,
-        loadAgreeError: '약관 불러오기에 실패했습니다.',
+        loadAgreeError: '약관 동의 정보를 불러오는데 실패했습니다.',
         loadAgreeSuccess: false,
       });
       throw error;
@@ -293,7 +289,7 @@ export const orgStore = create<OrgStore>((set, get) => ({
       if (!token) {
         throw new Error('토큰이 없습니다.');
       }
-      await apiService.post('/org/changeAgree', {token, agree: info});
+      await apiService.post('/org/changeAgree', {agree: info});
 
       set({changeAgreeLoading: false, changeAgreeSuccess: true});
     } catch (e) {
@@ -312,7 +308,7 @@ export const orgStore = create<OrgStore>((set, get) => ({
       if (!token) {
         throw new Error('토큰이 없습니다.');
       }
-      await apiService.post('/org/delete', {token});
+      await apiService.post('/org/delete', {});
       set({deleteOrgLoading: false, deleteOrgSuccess: true});
     } catch (e) {
       console.error(e);
@@ -325,8 +321,8 @@ export const orgStore = create<OrgStore>((set, get) => ({
       if (!token) {
         throw new Error('토큰이 없습니다.');
       }
-      await apiService.post('/org/verifyPassword', {token, password});
-      return true;
+      const response = await apiService.post<{data: {valid: boolean}}>('/org/verifyPassword', {password});
+      return response?.data?.valid === true;
     } catch (error) {
       console.error(error);
       return false;

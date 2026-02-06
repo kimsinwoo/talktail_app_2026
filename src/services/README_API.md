@@ -25,7 +25,7 @@ src/
     ├── userStore.ts        # 펫 관련 API
     ├── deviceStore.ts      # 디바이스/인증 API
     ├── dataStore.ts        # 데이터/CSV API
-    ├── orgStore.ts         # 기관 정보 API
+    ├── orgStore.ts         # 사용자 프로필 API
     └── boardStore.ts       # 게시판 API
 ```
 
@@ -45,7 +45,7 @@ await deviceStore.getState().login({
 // 회원가입
 await deviceStore.getState().signup({
   deviceCode: 'DEVICE_CODE',
-  org_name: '기관명',
+  org_name: '이름',
   org_address: '주소',
   org_id: '아이디',
   org_pw: '비밀번호',
@@ -129,19 +129,21 @@ await dataStore.getState().downCSV('file_name.csv', '라벨');
 await dataStore.getState().deleteCSV('file_name.csv');
 ```
 
-### 4. 기관 정보 (Org Store)
+### 4. 사용자 프로필 (Org Store)
+
+일반 사용자(일반인) 대상 프로필·계정 관리입니다.
 
 ```typescript
 import {orgStore} from '../store/orgStore';
 
-// 기관 정보 가져오기
+// 사용자 정보 가져오기
 await orgStore.getState().loadOrg();
 
-// 기관 정보 수정
+// 사용자 정보 수정
 await orgStore.getState().updateOrg({
   device_code: 'DEVICE_CODE',
-  org_name: '새 기관명',
-  org_address: '새 주소',
+  org_name: '이름',
+  org_address: '주소',
   org_id: 'org_id',
   org_pw: 'password',
   org_phone: '전화번호',

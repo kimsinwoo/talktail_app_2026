@@ -34,7 +34,9 @@
 		<true/>
 		<key>NSExceptionDomains</key>
 		<dict>
-			<key>210.90.113.200</key>
+			<key>172.20.10.2</key>
+			<string></string>
+			<key>192.168.0.23</key>
 			<string></string>
 			<key>54.172.201.255</key>
 			<dict>
@@ -77,5 +79,18 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<false/>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>talktail</string>
+			</array>
+			<key>CFBundleURLName</key>
+			<string>talktail.oauth</string>
+			<key>CFBundleURLRole</key>
+			<string>Editor</string>
+		</dict>
+	</array>
 </dict>
 </plist>

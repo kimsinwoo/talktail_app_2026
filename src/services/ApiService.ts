@@ -4,6 +4,9 @@ import {getTokenString, removeToken} from '../utils/storage';
 import {DeviceEventEmitter} from 'react-native';
 import Toast from 'react-native-toast-message';
 
+/** GET 요청 중복 방지: 동일 URL 동시 요청 시 하나만 실행 */
+const getPending = new Map<string, Promise<unknown>>();
+
 class ApiService {
   private api: AxiosInstance;
 
@@ -38,26 +41,26 @@ class ApiService {
       response => response,
       async error => {
         if (error.response?.status === 401) {
+          const requestUrl = error.config?.url ?? '';
+          // ✅ 로그인 요청 실패 시에는 토큰 삭제/로그아웃 처리하지 않음 (로그인 실패 ≠ 토큰 만료)
+          const isLoginRequest = typeof requestUrl === 'string' && requestUrl.includes('/auth/login');
+          if (isLoginRequest) {
+            return Promise.reject(error);
+          }
           // 토큰 만료 등의 경우 처리
           console.error('인증 오류:', error);
-          
-          // ✅ 토큰 삭제
           try {
             await removeToken();
             console.log('[ApiService] ✅ 토큰 삭제 완료');
           } catch (tokenError) {
             console.error('[ApiService] ❌ 토큰 삭제 실패:', tokenError);
           }
-          
-          // ✅ Toast 메시지 표시
           Toast.show({
             type: 'error',
             text1: '인증 오류',
             text2: '토큰이 만료되었습니다. 다시 로그인해주세요.',
             position: 'bottom',
           });
-          
-          // ✅ 전역 이벤트 발생 (App.tsx에서 리스닝)
           DeviceEventEmitter.emit('auth:logout', {reason: 'token_expired'});
         }
         return Promise.reject(error);
@@ -65,10 +68,21 @@ class ApiService {
     );
   }
 
-  // GET 요청
+  // GET 요청 (동일 URL 동시 호출 시 한 번만 요청 후 결과 공유)
   async get<T>(url: string, config?: AxiosRequestConfig): Promise<T> {
-    const response = await this.api.get<T>(url, config);
-    return response.data;
+    const key = url + (config?.params ? JSON.stringify(config.params) : '');
+    const pending = getPending.get(key);
+    if (pending) {
+      return pending as Promise<T>;
+    }
+    const promise = this.api
+      .get<T>(url, config)
+      .then(res => res.data)
+      .finally(() => {
+        getPending.delete(key);
+      });
+    getPending.set(key, promise);
+    return promise as Promise<T>;
   }
 
   // POST 요청

@@ -165,7 +165,7 @@ export function BLEConnectionScreen({
       Toast.show({
         type: 'info',
         text1: 'LED 깜빡임 시작',
-        text2: '디바이스의 LED가 깜빡입니다. 해당 디바이스를 확인하세요.',
+        text2: '디바이스에서 삼색 LED가 깜빡입니다.',
         position: 'bottom',
       });
       

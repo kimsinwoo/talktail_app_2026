@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -25,6 +25,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { userStore } from '../store/userStore';
+import { getDailyCheckToday, saveDailyCheck } from '../services/dailyCheckApi';
 
 type CheckItemValue = string | null;
 
@@ -1006,6 +1007,29 @@ export function DailyHealthCheckScreen() {
   const [specialNote, setSpecialNote] = useState('');
   const [poopNote, setPoopNote] = useState('');
 
+  useEffect(() => {
+    if (!petCode) return;
+    getDailyCheckToday(petCode).then((res) => {
+      if (!res.record) return;
+      const r = res.record;
+      setCheckItems((prev) =>
+        prev.map((item) => {
+          const val =
+            item.id === 'meal' ? r.meal
+            : item.id === 'water' ? r.water
+            : item.id === 'activity' ? r.activity
+            : item.id === 'sleep' ? r.sleep
+            : item.id === 'poop' ? r.poop
+            : item.id === 'special' ? r.special
+            : null;
+          return val != null ? { ...item, selectedValue: val } : item;
+        }),
+      );
+      if (r.poop_note) setPoopNote(r.poop_note);
+      if (r.special_note) setSpecialNote(r.special_note);
+    }).catch(() => {});
+  }, [petCode]);
+
   // 증상 카드 상태
   const [isSymptomSectionOpen, setIsSymptomSectionOpen] = useState(false);
   const [openCategories, setOpenCategories] = useState<Record<string, boolean>>({});
@@ -1048,23 +1072,30 @@ export function DailyHealthCheckScreen() {
       return;
     }
 
-    // TODO: 데이터 저장 로직
-    console.log('체크 결과:', {
-      petCode,
-      checkItems,
-      poopNote: hasPoopNote ? poopNote : null,
-      specialNote: hasSpecialNote ? specialNote : null,
-      date: new Date().toISOString(),
-    });
+    const meal = checkItems.find((i) => i.id === 'meal')?.selectedValue ?? null;
+    const water = checkItems.find((i) => i.id === 'water')?.selectedValue ?? null;
+    const activity = checkItems.find((i) => i.id === 'activity')?.selectedValue ?? null;
+    const sleep = checkItems.find((i) => i.id === 'sleep')?.selectedValue ?? null;
+    const poop = checkItems.find((i) => i.id === 'poop')?.selectedValue ?? null;
+    const special = checkItems.find((i) => i.id === 'special')?.selectedValue ?? null;
 
-    Toast.show({
-      type: 'success',
-      text1: '오늘의 상태 체크가 완료되었어요! ✅',
-      position: 'bottom',
-    });
-
-    // 홈으로 돌아가기
-    navigation.goBack();
+    saveDailyCheck(petCode, {
+      meal,
+      water,
+      activity,
+      sleep,
+      poop,
+      special,
+      special_note: hasSpecialNote ? specialNote.trim() : null,
+      poop_note: hasPoopNote ? poopNote.trim() : null,
+    })
+      .then(() => {
+        Toast.show({ type: 'success', text1: '오늘의 상태 체크가 완료되었어요! ✅', position: 'bottom' });
+        navigation.goBack();
+      })
+      .catch(() => {
+        Toast.show({ type: 'error', text1: '저장에 실패했어요. 다시 시도해주세요.', position: 'bottom' });
+      });
   };
 
   const allCompleted = checkItems.every(item => item.selectedValue !== null);
