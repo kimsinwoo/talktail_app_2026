@@ -315,7 +315,6 @@ export function HubDeviceManagementScreen() {
         });
         await refreshHubDevices(hubAddress);
         setSelectedMacsByHub(prev => ({...prev, [hubAddress]: {}}));
-        // ✅ 모달 닫기 및 찾은 디바이스 목록 초기화
         setShowFoundDevicesModal(prev => ({...prev, [hubAddress]: false}));
         setFoundDevicesByHub(prev => ({...prev, [hubAddress]: []}));
       } else {

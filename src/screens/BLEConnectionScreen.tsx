@@ -171,7 +171,8 @@ export function BLEConnectionScreen({
       
       // ✅ 이름 변경 모달 표시
       setDeviceToRegister({id: deviceId, name: deviceName});
-      setDeviceName(deviceName || 'Tailing Device');
+      setDeviceName(deviceName || 'Tailing Device')
+      ;
       setShowNameModal(true);
       setIdentifyingDeviceId(null);
     } catch (error: any) {

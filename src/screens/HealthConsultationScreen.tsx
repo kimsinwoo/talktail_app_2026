@@ -8,7 +8,6 @@ import {
   TouchableOpacity,
   KeyboardAvoidingView,
   Platform,
-  ActivityIndicator,
 } from 'react-native';
 import {
   ChevronLeft,
@@ -18,7 +17,10 @@ import {
 } from 'lucide-react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {useNavigation, useRoute} from '@react-navigation/native';
+import Toast from 'react-native-toast-message';
 import {userStore} from '../store/userStore';
+import {apiService} from '../services/ApiService';
+import {LoadingDots} from '../components/LoadingDots';
 
 interface Message {
   id: string;
@@ -69,18 +71,31 @@ export function HealthConsultationScreen() {
     setInputText('');
     setIsLoading(true);
 
-    // TODO: OpenAI API 호출
-    // 현재는 더미 응답
-    setTimeout(() => {
+    try {
+      const payload = messages.concat(userMessage).map(m => ({
+        role: m.type,
+        content: m.content,
+      }));
+      const res = await apiService.postRaw<{success?: boolean; reply?: string}>(
+        '/health-chat',
+        {messages: payload},
+      );
+      const reply = (res && typeof res === 'object' && 'reply' in res && (res as {reply?: string}).reply) || '';
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         type: 'assistant',
-        content: '건강 질문 도우미 기능은 준비중입니다. 곧 만나보실 수 있어요!',
+        content: reply || '답변을 생성하지 못했어요. 다시 질문해 주세요.',
         timestamp: new Date(),
       };
       setMessages(prev => [...prev, assistantMessage]);
+    } catch (e: any) {
+      const msg =
+        e.response?.data?.message ||
+        (e.message === 'Network Error' ? '네트워크 연결을 확인해 주세요.' : '일시적인 오류가 났어요. 잠시 후 다시 시도해 주세요.');
+      Toast.show({type: 'error', text1: '답변 실패', text2: msg, position: 'bottom'});
+    } finally {
       setIsLoading(false);
-    }, 1500);
+    }
   };
 
   const formatTime = (date: Date) => {
@@ -156,14 +171,14 @@ export function HealthConsultationScreen() {
             </View>
           ))}
 
-          {/* 로딩 인디케이터 */}
+          {/* 로딩: ● ● ● 순차 애니메이션 */}
           {isLoading && (
             <View style={styles.loadingWrapper}>
               <View style={styles.assistantAvatar}>
                 <Bot size={16} color="#2E8B7E" />
               </View>
               <View style={styles.loadingBubble}>
-                <ActivityIndicator size="small" color="#2E8B7E" />
+                <LoadingDots />
               </View>
             </View>
           )}
@@ -181,6 +196,7 @@ export function HealthConsultationScreen() {
               multiline
               maxLength={500}
               editable={!isLoading}
+              pointerEvents={isLoading ? 'none' : 'auto'}
             />
             <TouchableOpacity
               style={[
