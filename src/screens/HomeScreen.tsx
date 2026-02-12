@@ -36,9 +36,10 @@ import {
 } from 'lucide-react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
-import {useNavigation, useFocusEffect} from '@react-navigation/native';
+import {useNavigation, useFocusEffect, useRoute} from '@react-navigation/native';
 import type {Pet as RegisteredPet} from '../store/userStore';
 import {hubStatusStore} from '../store/hubStatusStore';
+import {fetchHomeSummary} from '../services/homeApi';
 
 interface HomeScreenProps {
   pets: RegisteredPet[];
@@ -61,68 +62,20 @@ export function HomeScreen({
   const [currentPetIndex, setCurrentPetIndex] = useState(0);
   const [isWeatherExpanded, setIsWeatherExpanded] = useState(false);
   const navigation = useNavigation<any>();
+  const route = useRoute();
   const petFlatListRef = useRef<FlatList>(null);
   const petDependentSectionRef = useRef<FlatList>(null);
   
-  // 허브 목록 가져오기 (메모이제이션)
   const hubs = hubStatusStore(state => state.hubs);
   const hasHub = useMemo(() => hubs.length > 0, [hubs.length]);
 
-  // 더미데이터: 3마리 반려동물 추가 (실제 pets 배열이 3마리 미만일 경우)
-  const displayPets = useMemo(() => {
-    const dummyPets: RegisteredPet[] = [
-      {
-        pet_code: 'DUMMY_1',
-        name: '초코',
-        breed: '골든 리트리버',
-        species: 'dog',
-        weight: '25',
-        gender: '수컷',
-        neutering: '여',
-        birthDate: '2020-05-15',
-        admissionDate: '2026-01-10',
-        veterinarian: '김수의',
-        diagnosis: '정상',
-        medicalHistory: '없음',
-      },
-      {
-        pet_code: 'DUMMY_2',
-        name: '루이',
-        breed: '페르시안',
-        species: 'cat',
-        weight: '4.5',
-        gender: '암컷',
-        neutering: '여',
-        birthDate: '2021-03-20',
-        admissionDate: '2026-01-08',
-        veterinarian: '박수의',
-        diagnosis: '피부염',
-        medicalHistory: '없음',
-      },
-      {
-        pet_code: 'DUMMY_3',
-        name: '뽀삐',
-        breed: '비글',
-        species: 'dog',
-        weight: '12',
-        gender: '수컷',
-        neutering: '부',
-        birthDate: '2019-11-10',
-        admissionDate: '2026-01-12',
-        veterinarian: '이수의',
-        diagnosis: '정상',
-        medicalHistory: '없음',
-      },
-    ];
+  const displayPets = useMemo(() => pets, [pets]);
 
-    if (pets.length === 0) {
-      return dummyPets;
-    }
-    if (pets.length < 3) {
-      return [...pets, ...dummyPets.slice(0, 3 - pets.length)];
-    }
-    return pets;
-  }, [pets]);
+  const [homeSummary, setHomeSummary] = useState<Record<string, {
+    dailyCheck: {completed: boolean; completedAt?: string | null};
+    diary: {hasToday: boolean; lastDate?: string | null; preview?: string | null};
+    recentTrend: {message: string; days: number};
+  }>>({});
 
   // 현재 선택된 반려동물 찾기
   const currentPet = displayPets.find(p => p.pet_code === selectedPetCode) || displayPets[currentPetIndex] || null;
@@ -146,23 +99,26 @@ export function HomeScreen({
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
-    // 허브 목록 새로고침
     await hubStatusStore.getState().refreshHubs(true);
-    await new Promise<void>(resolve => setTimeout(() => resolve(), 1500));
+    if (pets.length > 0) {
+      fetchHomeSummary(pets.map((p) => p.pet_code))
+        .then((summary) => setHomeSummary((prev) => ({ ...prev, ...summary })))
+        .catch(() => {});
+    }
+    await new Promise<void>((r) => setTimeout(r, 800));
     setIsRefreshing(false);
-    Toast.show({
-      type: 'success',
-      text1: '최신 정보로 업데이트했어요! 🔄',
-      position: 'bottom',
-    });
+    Toast.show({ type: 'success', text1: '최신 정보로 업데이트했어요! 🔄', position: 'bottom' });
   };
 
-  // 화면이 포커스될 때마다 허브 목록 새로고침
   useFocusEffect(
     React.useCallback(() => {
-      // 허브 목록 강제 새로고침 (캐시 무시)
       hubStatusStore.getState().refreshHubs(true).catch(() => {});
-    }, []),
+      if (pets.length === 0) return;
+      const petCodes = pets.map((p) => p.pet_code);
+      fetchHomeSummary(petCodes)
+        .then((summary) => setHomeSummary((prev) => ({ ...prev, ...summary })))
+        .catch((err) => console.warn('[HomeScreen] 홈 요약 로드 실패:', err?.message ?? err));
+    }, [pets]),
   );
 
   // 반려동물 슬라이드 변경 핸들러
@@ -236,50 +192,47 @@ export function HomeScreen({
     pm25: 15,
   };
 
-  // 반려동물별 데이터 (더미)
+  const defaultStatusSummary = { text: '오늘 상태 체크가 아직 없어요', icon: 'alert' as const };
   const petDependentData = useMemo(() => {
-    const mockData: Record<string, {
+    const out: Record<string, {
       statusSummary: {text: string; icon: 'up' | 'down' | 'minus' | 'alert'};
       dailyCheck: {completed: boolean; completedAt?: string};
       diary: {hasToday: boolean; lastDate?: string; preview?: string};
       recentTrend: {message: string; days: number};
     }> = {};
-
-    displayPets.forEach((pet, index) => {
-      const statusSummaries = [
-        {text: '오늘 상태 체크가 아직 없어요', icon: 'alert' as const},
-        {text: '오늘은 무난한 하루였어요', icon: 'minus' as const},
-        {text: '최근 며칠간 컨디션이 조금 떨어졌어요', icon: 'down' as const},
-      ];
-      
-      const dailyChecks = [
-        {completed: false},
-        {completed: true, completedAt: '오전 9시'},
-        {completed: true, completedAt: '오후 2시'},
-      ];
-
-      const diaries = [
-        {hasToday: false, lastDate: '2026.01.21'},
-        {hasToday: true, lastDate: '2026.01.22', preview: '오늘도 산책 완료!'},
-        {hasToday: true, lastDate: '2026.01.22', preview: '새 간식 시식'},
-      ];
-
-      const recentTrends = [
-        {message: '최근 3일간 식사량이 평소보다 적은 날이 있어요', days: 3},
-        {message: '산책량이 줄어든 날이 자주 보여요', days: 5},
-        {message: '컨디션이 안정적으로 유지되고 있어요', days: 7},
-      ];
-
-      mockData[pet.pet_code] = {
-        statusSummary: statusSummaries[index % 3] || statusSummaries[0],
-        dailyCheck: dailyChecks[index % 3] || dailyChecks[0],
-        diary: diaries[index % 3] || diaries[0],
-        recentTrend: recentTrends[index % 3] || recentTrends[0],
-      };
+    displayPets.forEach((pet) => {
+      const s = homeSummary[pet.pet_code];
+      if (s) {
+        let statusText = defaultStatusSummary.text;
+        let statusIcon: 'up' | 'down' | 'minus' | 'alert' = 'alert';
+        if (s.dailyCheck.completed) {
+          if (s.recentTrend?.message) {
+            statusText = s.recentTrend.message;
+            if (/안정적|무난|좋아/.test(s.recentTrend.message)) statusIcon = 'minus';
+            else if (/줄어든|적은|다른|안 좋아|나쁜/.test(s.recentTrend.message)) statusIcon = 'down';
+            else statusIcon = 'minus';
+          } else {
+            statusText = '오늘은 무난한 하루였어요';
+            statusIcon = 'minus';
+          }
+        }
+        out[pet.pet_code] = {
+          statusSummary: { text: statusText, icon: statusIcon },
+          dailyCheck: { completed: s.dailyCheck.completed, completedAt: s.dailyCheck.completedAt ?? undefined },
+          diary: { hasToday: s.diary.hasToday, lastDate: s.diary.lastDate ?? undefined, preview: s.diary.preview ?? undefined },
+          recentTrend: s.recentTrend,
+        };
+      } else {
+        out[pet.pet_code] = {
+          statusSummary: defaultStatusSummary,
+          dailyCheck: { completed: false },
+          diary: { hasToday: false },
+          recentTrend: { message: '', days: 0 },
+        };
+      }
     });
-
-    return mockData;
-  }, [displayPets]);
+    return out;
+  }, [displayPets, homeSummary]);
 
   // 현재 반려동물의 데이터
   const currentPetData = useMemo(() => {
@@ -526,7 +479,7 @@ export function HomeScreen({
                               </View>
                             </View>
                             <Text style={styles.coreCardSubtitle}>
-                              오늘의 식사·산책·컨디션 기록이 남아있어요
+                              {recentTrend?.message || '오늘의 식사·산책·컨디션 기록이 남아있어요'}
                             </Text>
                             <Text style={styles.coreCardTime}>{dailyCheck.completedAt}</Text>
                           </>
@@ -663,22 +616,22 @@ export function HomeScreen({
           />
         </View>
 
-        {/* 서비스 아이콘 그리드 */}
+          {/* 서비스 아이콘 그리드 */}
         <View style={styles.section}>
           <View style={styles.serviceGrid}>
             {/* 웨어러블 모니터링 (허브가 없을 때만 작은 아이콘으로 표시) */}
             {!hasHub && (
-              <TouchableOpacity
-                style={styles.serviceIconCard}
-                activeOpacity={0.85}
-                onPress={() => {
-                  (navigation as any).navigate('DeviceManagement');
-                }}>
-                <View style={[styles.serviceIconContainer, {backgroundColor: '#E7F5F4'}]}>
-                  <Activity size={24} color="#2E8B7E" />
-                </View>
-                <Text style={styles.serviceIconTitle}>웨어러블</Text>
-              </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.serviceIconCard}
+              activeOpacity={0.85}
+              onPress={() => {
+                (navigation as any).navigate('DeviceManagement');
+              }}>
+              <View style={[styles.serviceIconContainer, {backgroundColor: '#E7F5F4'}]}>
+                <Activity size={24} color="#2E8B7E" />
+              </View>
+              <Text style={styles.serviceIconTitle}>웨어러블</Text>
+            </TouchableOpacity>
             )}
 
             {/* 피부 진단 */}

@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React, {useState, useEffect} from 'react';
 import {
   View,
   Text,
@@ -7,26 +7,58 @@ import {
   StyleSheet,
   TextInput,
   SafeAreaView,
+  ActivityIndicator,
 } from 'react-native';
 import {ChevronLeft, Camera, Save} from 'lucide-react-native';
 import Toast from 'react-native-toast-message';
+import {orgStore} from '../store/orgStore';
 
 interface ProfileSettingsScreenProps {
   navigation: any;
 }
 
 export function ProfileSettingsScreen({navigation}: ProfileSettingsScreenProps) {
-  const [name, setName] = useState('박지훈');
-  const [email, setEmail] = useState('jhpark@talktail.com');
-  const [phone, setPhone] = useState('010-1234-5678');
+  const org = orgStore(s => s.org);
+  const loadOrg = orgStore(s => s.loadOrg);
+  const changeInfo = orgStore(s => s.changeInfo);
+  const changeInfoLoading = orgStore(s => s.changeInfoLoading);
+  const changeInfoError = orgStore(s => s.changeInfoError);
 
-  const handleSave = () => {
-    Toast.show({
-      type: 'success',
-      text1: '프로필이 저장되었습니다',
-      position: 'bottom',
-    });
-    setTimeout(() => navigation.goBack(), 1000);
+  const [name, setName] = useState(org?.org_name ?? '');
+  const [phone, setPhone] = useState(org?.org_phone ?? '');
+  const [address, setAddress] = useState(org?.org_address ?? '');
+
+  useEffect(() => {
+    loadOrg().catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (org?.org_name != null) setName(org.org_name);
+    if (org?.org_phone != null) setPhone(org.org_phone);
+    if (org?.org_address != null) setAddress(org.org_address);
+  }, [org?.org_name, org?.org_phone, org?.org_address]);
+
+  const handleSave = async () => {
+    try {
+      await changeInfo({
+        org_name: name,
+        org_phone: phone,
+        org_address: address,
+        org_email: org?.org_email ?? '',
+      });
+      Toast.show({
+        type: 'success',
+        text1: '프로필이 저장되었습니다',
+        position: 'bottom',
+      });
+      setTimeout(() => navigation.goBack(), 1000);
+    } catch (e) {
+      Toast.show({
+        type: 'error',
+        text1: changeInfoError || '저장에 실패했습니다.',
+        position: 'bottom',
+      });
+    }
   };
 
   return (
@@ -75,12 +107,10 @@ export function ProfileSettingsScreen({navigation}: ProfileSettingsScreenProps) 
             <Text style={styles.label}>이메일</Text>
             <TextInput
               style={styles.input}
-              value={email}
-              onChangeText={setEmail}
-              placeholder="이메일을 입력하세요"
+              value={org?.org_email ?? ''}
+              editable={false}
+              placeholder="이메일 (변경 불가)"
               placeholderTextColor="#CCCCCC"
-              keyboardType="email-address"
-              autoCapitalize="none"
             />
           </View>
 
@@ -95,6 +125,17 @@ export function ProfileSettingsScreen({navigation}: ProfileSettingsScreenProps) 
               keyboardType="phone-pad"
             />
           </View>
+
+          <View style={styles.formGroup}>
+            <Text style={styles.label}>주소</Text>
+            <TextInput
+              style={styles.input}
+              value={address}
+              onChangeText={setAddress}
+              placeholder="주소를 입력하세요"
+              placeholderTextColor="#CCCCCC"
+            />
+          </View>
         </View>
 
         {/* Save Button */}
@@ -102,9 +143,16 @@ export function ProfileSettingsScreen({navigation}: ProfileSettingsScreenProps) 
           <TouchableOpacity
             style={styles.saveButton}
             onPress={handleSave}
+            disabled={changeInfoLoading}
             activeOpacity={0.7}>
-            <Save size={20} color="white" />
-            <Text style={styles.saveButtonText}>저장하기</Text>
+            {changeInfoLoading ? (
+              <ActivityIndicator size="small" color="white" />
+            ) : (
+              <>
+                <Save size={20} color="white" />
+                <Text style={styles.saveButtonText}>저장하기</Text>
+              </>
+            )}
           </TouchableOpacity>
         </View>
       </ScrollView>

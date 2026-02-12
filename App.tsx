@@ -15,7 +15,7 @@ import {
   DeviceEventEmitter,
 } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import Toast from 'react-native-toast-message';
@@ -46,6 +46,9 @@ import { MyPageScreen } from './src/screens/MyPageScreen';
 import { LoginScreen } from './src/screens/LoginScreen';
 import SignupScreen from './src/screens/SignupScreen';
 import SignupConsentScreen from './src/screens/SignupConsentScreen';
+import { FindIdScreen } from './src/screens/FindIdScreen';
+import { ForgotPasswordScreen } from './src/screens/ForgotPasswordScreen';
+import { ResetPasswordScreen } from './src/screens/ResetPasswordScreen';
 import CustomerSupportScreen from './src/screens/CustomerSupportScreen';
 import FavoritesScreen from './src/screens/FavoritesScreen';
 import OrderHistoryScreen from './src/screens/OrderHistoryScreen';
@@ -66,8 +69,12 @@ import HealthCheckStartScreen from './src/screens/HealthCheckStartScreen';
 // import CheckoutScreen from './src/screens/CheckoutScreen';
 // import OrderCompleteScreen from './src/screens/OrderCompleteScreen';
 import { HubConsoleScreen } from './src/screens/HubConsoleScreen';
+import { HubListScreen } from './src/screens/HubListScreen';
+import { HubDeviceListScreen } from './src/screens/HubDeviceListScreen';
+import { TelemetryListScreen } from './src/screens/TelemetryListScreen';
 import { DeviceRegisterScreen } from './src/screens/DeviceRegisterScreen';
 import { HubDeviceManagementScreen } from './src/screens/HubDeviceManagementScreen';
+import { DeviceSetupFlowScreen } from './src/screens/DeviceSetupFlowScreen';
 import { DiaryScreen } from './src/screens/DiaryScreen';
 import { DiaryWriteScreen } from './src/screens/DiaryWriteScreen';
 import { DiaryDetailScreen } from './src/screens/DiaryDetailScreen';
@@ -79,6 +86,7 @@ import { CalendarScreen } from './src/screens/CalendarScreen';
 import { DiarySearchScreen } from './src/screens/DiarySearchScreen';
 import { hasToken, saveConnectedDeviceId } from './src/utils/storage';
 import { apiService } from './src/services/ApiService';
+import { FirebaseMessagingService } from './src/services/FirebaseMessagingService';
 
 export type TabParamList = {
   Home: undefined;
@@ -130,20 +138,28 @@ export type RootStackParamList = {
   MonitoringDetail:
     | { petCode: string; deviceMac: string; petName?: string }
     | undefined;
-  DeviceManagement: { initialMode?: 'hubProvision' | 'ble1to1' } | undefined;
+  DeviceManagement: { initialMode?: 'hubProvision' | 'ble1to1'; returnToMonitoring?: boolean } | undefined;
+  DeviceSetupFlow: undefined;
   DailyHealthCheck: { petCode?: string; petName?: string } | undefined;
   RecentStatusTrend: { petCode?: string; petName?: string } | undefined;
   HealthConsultation: { petCode?: string; petName?: string } | undefined;
   ImageGeneration: { petCode?: string; petName?: string } | undefined;
   Calendar: { petCode?: string; petName?: string } | undefined;
+  HubList: undefined;
+  HubDeviceList: { hubAddress: string; hubName?: string } | undefined;
+  TelemetryList: { deviceMac?: string; deviceName?: string; hubAddress?: string } | undefined;
 };
 
 const Tab = createBottomTabNavigator<TabParamList>();
+const navigationRef = createNavigationContainerRef<RootStackParamList>();
 const Stack = createNativeStackNavigator<RootStackParamList>();
 type AuthStackParamList = {
   Login: undefined;
   Signup: undefined;
   SignupConsent: undefined;
+  FindId: undefined;
+  ForgotPassword: undefined;
+  ResetPassword: { email?: string } | undefined;
 };
 const AuthStack = createNativeStackNavigator<AuthStackParamList>();
 
@@ -303,7 +319,7 @@ function App(): React.JSX.Element {
     });
   }, [isLoggedIn, fetchPets]);
 
-  // ✅ 로그인 상태에서 서버 Notification 폴링 시작/중지
+  // ✅ 로그인 상태에서 서버 Notification 폴링 시작/중지 + FCM 초기화 및 토큰 등록
   useEffect(() => {
     if (!isLoggedIn) {
       backendNotificationService.stopPolling();
@@ -316,6 +332,13 @@ function App(): React.JSX.Element {
     hubSocketService.connect().catch(() => {
       // 화면에서 토스트/상태로 안내 (여기서는 크래시만 방지)
     });
+    // FCM: 알림 클릭 시 디바이스 상세 이동 + 토큰 등록
+    try {
+      FirebaseMessagingService.initialize(navigationRef);
+      FirebaseMessagingService.registerToken();
+    } catch (e) {
+      // @react-native-firebase 미설치 시 무시
+    }
     return () => {
       backendNotificationService.stopPolling();
       hubSocketService.disconnect();
@@ -494,6 +517,9 @@ function App(): React.JSX.Element {
                 />
               )}
             </AuthStack.Screen>
+            <AuthStack.Screen name="FindId" component={FindIdScreen} />
+            <AuthStack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
+            <AuthStack.Screen name="ResetPassword" component={ResetPasswordScreen} />
           </AuthStack.Navigator>
         </NavigationContainer>
         <Toast />
@@ -508,7 +534,7 @@ function App(): React.JSX.Element {
           barStyle={isDarkMode ? 'light-content' : 'dark-content'}
           backgroundColor="#F9F9F9"
         />
-        <NavigationContainer>
+        <NavigationContainer ref={navigationRef}>
           <Stack.Navigator screenOptions={{ headerShown: false }}>
             <Stack.Screen name="MainTabs">
               {() => (
@@ -647,6 +673,9 @@ function App(): React.JSX.Element {
             />
             <Stack.Screen name="PetEdit" component={PetEditScreen} />
             <Stack.Screen name="HubConsole" component={HubConsoleScreen} />
+            <Stack.Screen name="HubList" component={HubListScreen} />
+            <Stack.Screen name="HubDeviceList" component={HubDeviceListScreen} />
+            <Stack.Screen name="TelemetryList" component={TelemetryListScreen} />
             <Stack.Screen
               name="DeviceRegister"
               component={DeviceRegisterScreen}
@@ -666,6 +695,10 @@ function App(): React.JSX.Element {
             <Stack.Screen
               name="DeviceManagement"
               component={DeviceManagementScreen}
+            />
+            <Stack.Screen
+              name="DeviceSetupFlow"
+              component={DeviceSetupFlowScreen}
             />
             <Stack.Screen
               name="DailyHealthCheck"

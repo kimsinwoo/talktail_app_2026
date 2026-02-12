@@ -2,6 +2,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { toByteArray } from 'react-native-quick-base64';
 
 const TOKEN_KEY = '@auth_token';
+const OAUTH_GOOGLE_STATE_KEY = '@oauth_google_state';
+const OAUTH_GOOGLE_CODE_VERIFIER_KEY = '@oauth_google_code_verifier';
 
 interface DecodedToken {
   email: string;
@@ -34,6 +36,24 @@ const decodeJWT = (token: string): DecodedToken => {
     console.error('Error decoding JWT:', error);
     throw error;
   }
+};
+
+// OAuth Google: state/code_verifier 임시 저장 (콜백 시 사용 후 삭제)
+export const setOAuthGooglePending = async (state: string, codeVerifier: string): Promise<void> => {
+  await AsyncStorage.multiSet([
+    [OAUTH_GOOGLE_STATE_KEY, state],
+    [OAUTH_GOOGLE_CODE_VERIFIER_KEY, codeVerifier],
+  ]);
+};
+export const getOAuthGooglePending = async (): Promise<{ state: string; codeVerifier: string } | null> => {
+  const [state, codeVerifier] = await AsyncStorage.multiGet([OAUTH_GOOGLE_STATE_KEY, OAUTH_GOOGLE_CODE_VERIFIER_KEY]);
+  const s = state[1];
+  const c = codeVerifier[1];
+  if (s && c) return { state: s, codeVerifier: c };
+  return null;
+};
+export const clearOAuthGooglePending = async (): Promise<void> => {
+  await AsyncStorage.multiRemove([OAUTH_GOOGLE_STATE_KEY, OAUTH_GOOGLE_CODE_VERIFIER_KEY]);
 };
 
 // 토큰 저장

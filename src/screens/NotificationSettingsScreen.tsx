@@ -6,9 +6,11 @@ import {
   TouchableOpacity,
   StyleSheet,
   SafeAreaView,
+  ActivityIndicator,
 } from 'react-native';
-import {ChevronLeft, Bell, Heart, ShoppingBag, Smartphone} from 'lucide-react-native';
+import {ChevronLeft, Bell, Heart, ShoppingBag, Smartphone, Send} from 'lucide-react-native';
 import Toast from 'react-native-toast-message';
+import {apiService} from '../services/ApiService';
 
 interface NotificationSettingsScreenProps {
   navigation: any;
@@ -27,6 +29,7 @@ interface NotificationSetting {
 export function NotificationSettingsScreen({
   navigation,
 }: NotificationSettingsScreenProps) {
+  const [testPushLoading, setTestPushLoading] = useState(false);
   const [settings, setSettings] = useState<NotificationSetting[]>([
     {
       id: 'health',
@@ -65,6 +68,32 @@ export function NotificationSettingsScreen({
       bgColor: '#FFF4E6',
     },
   ]);
+
+  const handleSendTestPush = async () => {
+    setTestPushLoading(true);
+    try {
+      await apiService.post('/users/me/send-test-notification', {
+        title: 'Talktail 테스트',
+        body: '푸시 알림이 정상적으로 동작합니다.',
+      });
+      Toast.show({
+        type: 'success',
+        text1: '테스트 알림 발송',
+        text2: '잠시 후 기기에 알림이 도착합니다.',
+        position: 'bottom',
+      });
+    } catch (e: any) {
+      const msg = e.response?.data?.message || e.message || '발송에 실패했습니다.';
+      Toast.show({
+        type: 'error',
+        text1: '테스트 알림 실패',
+        text2: msg,
+        position: 'bottom',
+      });
+    } finally {
+      setTestPushLoading(false);
+    }
+  };
 
   const handleToggle = (id: string) => {
     setSettings(
@@ -139,6 +168,27 @@ export function NotificationSettingsScreen({
               </View>
             );
           })}
+        </View>
+
+        {/* 테스트 푸시 */}
+        <View style={styles.testSection}>
+          <TouchableOpacity
+            style={[styles.testButton, testPushLoading && styles.testButtonDisabled]}
+            onPress={handleSendTestPush}
+            disabled={testPushLoading}
+            activeOpacity={0.8}>
+            {testPushLoading ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <>
+                <Send size={18} color="#fff" />
+                <Text style={styles.testButtonText}>테스트 알림 보내기</Text>
+              </>
+            )}
+          </TouchableOpacity>
+          <Text style={styles.testHint}>
+            등록된 기기로 테스트 푸시를 보냅니다. FCM이 설정된 서버에서만 동작합니다.
+          </Text>
         </View>
 
         {/* Info Section */}
@@ -262,6 +312,37 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 2,
     elevation: 2,
+  },
+  testSection: {
+    paddingHorizontal: 16,
+    paddingTop: 24,
+    alignItems: 'center',
+  },
+  testButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    backgroundColor: '#2E8B7E',
+    minWidth: 200,
+  },
+  testButtonDisabled: {
+    opacity: 0.7,
+  },
+  testButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#fff',
+  },
+  testHint: {
+    marginTop: 10,
+    fontSize: 11,
+    color: '#888888',
+    textAlign: 'center',
+    paddingHorizontal: 16,
   },
   infoSection: {
     paddingHorizontal: 16,

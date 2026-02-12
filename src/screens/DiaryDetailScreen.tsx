@@ -29,6 +29,7 @@ import {
   DollarSign,
 } from 'lucide-react-native';
 import Toast from 'react-native-toast-message';
+import {deleteDiary} from '../services/diaryApi';
 
 const {width: SCREEN_WIDTH} = Dimensions.get('window');
 
@@ -138,13 +139,26 @@ export function DiaryDetailScreen() {
           text: '삭제',
           style: 'destructive',
           onPress: async () => {
-            // TODO: API 연동
-            Toast.show({
-              type: 'success',
-              text1: '일기가 삭제되었어요',
-              position: 'bottom',
-            });
-            navigation.goBack();
+            const id = typeof diary.id === 'number' ? diary.id : parseInt(String(diary.id), 10);
+            if (Number.isNaN(id)) {
+              Toast.show({type: 'error', text1: '삭제할 수 없어요', position: 'bottom'});
+              return;
+            }
+            try {
+              await deleteDiary(id);
+              Toast.show({
+                type: 'success',
+                text1: '일기가 삭제되었어요',
+                position: 'bottom',
+              });
+              navigation.goBack();
+            } catch (e: any) {
+              Toast.show({
+                type: 'error',
+                text1: e.response?.data?.message || '일기 삭제에 실패했어요',
+                position: 'bottom',
+              });
+            }
           },
         },
       ],

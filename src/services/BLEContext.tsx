@@ -14,6 +14,13 @@ interface DataPoint {
   samplingRate?: number;
 }
 
+export interface DeviceTelemetry {
+  hr: number | null;
+  spo2: number | null;
+  temp: number | null;
+  battery: number | null;
+}
+
 interface BLEState {
   connectedDevice: {
     startDate: string;
@@ -22,6 +29,12 @@ interface BLEState {
     petCode: string;
   } | null;
   deviceId: string | null;
+  /** 다중 BLE: 연결된 디바이스 ID 목록 */
+  connectedDeviceIds: string[];
+  /** 다중 BLE: 디바이스별 최신 측정값 */
+  dataByDevice: Record<string, DeviceTelemetry>;
+  /** 다중 BLE: 디바이스별 측정 중 여부 */
+  measuringDeviceIds: string[];
   currentHR: number | null;
   currentSpO2: number | null;
   currentTemp: {value: number; timestamp: number} | null;
@@ -30,7 +43,6 @@ interface BLEState {
   isConnected: boolean;
   isMeasuring: boolean;
   lastUpdateTime: number;
-  // 참고 코드처럼 추가
   irChartData: number[];
   chartBatchData: number[];
   tempChartData: Array<{value: number; timestamp: number}>;
@@ -48,18 +60,24 @@ type BLEAction =
       } | null;
     }
   | {type: 'SET_DEVICE_ID'; payload: string | null}
-  | {type: 'UPDATE_DATAS'; payload: {hr?: number; spo2?: number; temp?: number; battery?: number; tempChartData?: {value: number; timestamp: number}; irChartData?: number[]}}
+  | {type: 'ADD_CONNECTED_DEVICE'; payload: string}
+  | {type: 'REMOVE_CONNECTED_DEVICE'; payload: string}
+  | {type: 'UPDATE_DATAS'; payload: {deviceId?: string; hr?: number; spo2?: number; temp?: number; battery?: number; tempChartData?: {value: number; timestamp: number}; irChartData?: number[]}}
+  | {type: 'SET_MEASURING_DEVICE'; payload: {deviceId: string; measuring: boolean}}
   | {type: 'COLLECT_DATAS'; payload: DataPoint[]}
   | {type: 'CLEAR_COLLECTED_DATA'}
   | {type: 'SET_CONNECTED'; payload: boolean}
   | {type: 'SET_MEASURING'; payload: boolean}
-  | {type: 'UPDATE_IR_CHART_DATA'; payload: number[]} // IR 차트 데이터만 업데이트 (실시간 그래프용)
-  | {type: 'UPDATE_CHART_BATCH'; payload: DataPoint[]}; // 250개 데이터를 한번에 차트에 전달
+  | {type: 'UPDATE_IR_CHART_DATA'; payload: number[]}
+  | {type: 'UPDATE_CHART_BATCH'; payload: DataPoint[]};
 
 // 초기 상태
 const initialState: BLEState = {
   connectedDevice: null,
   deviceId: null,
+  connectedDeviceIds: [],
+  dataByDevice: {},
+  measuringDeviceIds: [],
   currentHR: null,
   currentSpO2: null,
   currentTemp: null,
@@ -68,7 +86,6 @@ const initialState: BLEState = {
   isConnected: false,
   isMeasuring: false,
   lastUpdateTime: 0,
-  // 참고 코드처럼 추가
   irChartData: [],
   chartBatchData: [],
   tempChartData: [],
@@ -81,6 +98,45 @@ const bleReducer = (state: BLEState, action: BLEAction): BLEState => {
       return {...state, connectedDevice: action.payload};
     case 'SET_DEVICE_ID':
       return {...state, deviceId: action.payload};
+    case 'ADD_CONNECTED_DEVICE': {
+      const id = action.payload;
+      if (state.connectedDeviceIds.includes(id)) return state;
+      return {
+        ...state,
+        connectedDeviceIds: [...state.connectedDeviceIds, id],
+        isConnected: true,
+        deviceId: id,
+        lastUpdateTime: Date.now(),
+      };
+    }
+    case 'REMOVE_CONNECTED_DEVICE': {
+      const id = action.payload;
+      const nextIds = state.connectedDeviceIds.filter(x => x !== id);
+      const nextData = {...state.dataByDevice};
+      delete nextData[id];
+      const nextMeasuring = state.measuringDeviceIds.filter(x => x !== id);
+      return {
+        ...state,
+        connectedDeviceIds: nextIds,
+        dataByDevice: nextData,
+        measuringDeviceIds: nextMeasuring,
+        isConnected: nextIds.length > 0,
+        deviceId: state.deviceId === id ? (nextIds[0] ?? null) : state.deviceId,
+        ...(state.deviceId === id && nextIds.length === 0
+          ? {currentHR: null, currentSpO2: null, currentTemp: null, currentBattery: null}
+          : {}),
+        lastUpdateTime: Date.now(),
+      };
+    }
+    case 'SET_MEASURING_DEVICE': {
+      const {deviceId, measuring} = action.payload;
+      const next = measuring
+        ? state.measuringDeviceIds.includes(deviceId)
+          ? state.measuringDeviceIds
+          : [...state.measuringDeviceIds, deviceId]
+        : state.measuringDeviceIds.filter(x => x !== deviceId);
+      return {...state, measuringDeviceIds: next, isMeasuring: next.length > 0, lastUpdateTime: Date.now()};
+    }
     case 'UPDATE_DATAS':
       // undefined가 아닌 경우에만 업데이트 (0도 유효한 값)
       let newTempData = state.tempChartData;
@@ -112,14 +168,26 @@ const bleReducer = (state: BLEState, action: BLEAction): BLEState => {
         newTempData.shift();
       }
       
+      const deviceId = action.payload.deviceId;
+      const prevDeviceData = deviceId ? state.dataByDevice[deviceId] : null;
+      const nextDataByDevice = deviceId
+        ? {
+            ...state.dataByDevice,
+            [deviceId]: {
+              hr: action.payload.hr !== undefined ? action.payload.hr : (prevDeviceData?.hr ?? null),
+              spo2: action.payload.spo2 !== undefined ? action.payload.spo2 : (prevDeviceData?.spo2 ?? null),
+              temp: action.payload.temp !== undefined ? action.payload.temp : (prevDeviceData?.temp ?? null),
+              battery: action.payload.battery !== undefined ? action.payload.battery : (prevDeviceData?.battery ?? null),
+            },
+          }
+        : state.dataByDevice;
       const newState = {
         ...state,
-        currentHR: action.payload.hr !== undefined ? action.payload.hr : state.currentHR,
-        currentSpO2: action.payload.spo2 !== undefined ? action.payload.spo2 : state.currentSpO2,
-        currentTemp: action.payload.temp !== undefined
-          ? {value: action.payload.temp, timestamp: Date.now()}
-          : state.currentTemp,
-        currentBattery: action.payload.battery !== undefined ? action.payload.battery : state.currentBattery,
+        currentHR: deviceId == null ? (action.payload.hr !== undefined ? action.payload.hr : state.currentHR) : state.currentHR,
+        currentSpO2: deviceId == null ? (action.payload.spo2 !== undefined ? action.payload.spo2 : state.currentSpO2) : state.currentSpO2,
+        currentTemp: deviceId == null ? (action.payload.temp !== undefined ? {value: action.payload.temp, timestamp: Date.now()} : state.currentTemp) : state.currentTemp,
+        currentBattery: deviceId == null ? (action.payload.battery !== undefined ? action.payload.battery : state.currentBattery) : state.currentBattery,
+        dataByDevice: nextDataByDevice,
         tempChartData: newTempData,
         irChartData: newIrData,
         lastUpdateTime: Date.now(),

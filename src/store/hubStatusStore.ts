@@ -153,6 +153,18 @@ export const hubStatusStore = create<HubStatusStore>((set, get) => ({
       get().setHubStatus(hubId, 'online');
     });
 
+    // ✅ 백엔드에서 disconnected:mac 수신 시 전달된 DEVICE_DISCONNECTED → 해당 디바이스 오프라인 반영
+    const offDisconnected = hubSocketService.on('DEVICE_DISCONNECTED', (payload: any) => {
+      const hubId = String(payload?.hubId || payload?.hub_address || '');
+      const deviceMac = typeof payload?.deviceMac === 'string' ? payload.deviceMac : '';
+      if (!hubId || !deviceMac) return;
+      const current = get().getConnectedDevices(hubId);
+      get().setConnectedDevices(
+        hubId,
+        current.filter((mac: string) => mac !== deviceMac),
+      );
+    });
+
     // ✅ 초기화 시 모든 허브 상태를 스토어에 동기화
     const allHubs = hubSocketService.getAllHubStatuses?.() || {};
     set(state => ({hubStatus: {...state.hubStatus, ...allHubs}}));
@@ -181,6 +193,7 @@ export const hubStatusStore = create<HubStatusStore>((set, get) => ({
     return () => {
       offStatus();
       offDevices();
+      offDisconnected();
     };
   },
 }));

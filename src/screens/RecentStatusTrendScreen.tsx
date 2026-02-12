@@ -1,4 +1,4 @@
-import React, {useState, useMemo} from 'react';
+import React, {useState, useMemo, useEffect} from 'react';
 import {
   View,
   Text,
@@ -20,13 +20,14 @@ import {
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {useNavigation, useRoute} from '@react-navigation/native';
 import {userStore} from '../store/userStore';
+import {getDailyCheckTrend} from '../services/dailyCheckApi';
 
 const {width: SCREEN_WIDTH} = Dimensions.get('window');
 
-// 더미 데이터 타입
 interface DailyCheckRecord {
   date: string;
   meal: 'good' | 'less' | 'little';
+  water: 'normal' | 'less' | 'more';
   poop: 'normal' | 'slightly' | 'different';
   activity: 'similar' | 'less' | 'much_less';
   condition: 'good' | 'normal' | 'bad';
@@ -41,107 +42,83 @@ export function RecentStatusTrendScreen() {
 
   const pets = userStore(s => s.pets);
   const currentPet = pets.find(p => p.pet_code === petCode) || pets[0];
+  const effectivePetCode = petCode || currentPet?.pet_code;
 
-  // 더미 데이터: 최근 7일간의 체크 기록
-  const [records] = useState<DailyCheckRecord[]>([
-    {
-      date: '2026-01-22',
-      meal: 'good',
-      poop: 'normal',
-      activity: 'similar',
-      condition: 'good',
-    },
-    {
-      date: '2026-01-21',
-      meal: 'less',
-      poop: 'normal',
-      activity: 'less',
-      condition: 'normal',
-    },
-    {
-      date: '2026-01-20',
-      meal: 'less',
-      poop: 'slightly',
-      activity: 'less',
-      condition: 'normal',
-      specialNote: '기침을 몇 번 했어요',
-    },
-    {
-      date: '2026-01-19',
-      meal: 'good',
-      poop: 'normal',
-      activity: 'similar',
-      condition: 'good',
-    },
-    {
-      date: '2026-01-18',
-      meal: 'good',
-      poop: 'normal',
-      activity: 'similar',
-      condition: 'good',
-    },
-    {
-      date: '2026-01-17',
-      meal: 'less',
-      poop: 'normal',
-      activity: 'less',
-      condition: 'normal',
-    },
-    {
-      date: '2026-01-16',
-      meal: 'good',
-      poop: 'normal',
-      activity: 'similar',
-      condition: 'good',
-    },
-  ]);
+  const [records, setRecords] = useState<DailyCheckRecord[]>([]);
 
-  // 패턴 분석
+  useEffect(() => {
+    if (!effectivePetCode) return;
+    getDailyCheckTrend(effectivePetCode, 7)
+      .then((list) =>
+        setRecords(
+          list.map((r) => ({
+            date: r.date,
+            meal: (r.meal || 'good') as DailyCheckRecord['meal'],
+            water: (r.water || 'normal') as DailyCheckRecord['water'],
+            poop: (r.poop || 'normal') as DailyCheckRecord['poop'],
+            activity: (r.activity || 'similar') as DailyCheckRecord['activity'],
+            condition: (r.condition || 'normal') as DailyCheckRecord['condition'],
+            specialNote: r.specialNote,
+          })),
+        ),
+      )
+      .catch(() => setRecords([]));
+  }, [effectivePetCode]);
+
+  // 패턴 분석: 관찰·안내 톤으로 한 문장
   const patterns = useMemo(() => {
+    if (records.length === 0) return ['기록이 쌓이면 흐름을 볼 수 있어요'];
+
     const mealLessCount = records.filter(r => r.meal === 'less' || r.meal === 'little').length;
-    const activityLessCount = records.filter(
-      r => r.activity === 'less' || r.activity === 'much_less',
-    ).length;
+    const waterLessCount = records.filter(r => r.water === 'less').length;
+    const activityLessCount = records.filter(r => r.activity === 'less' || r.activity === 'much_less').length;
     const conditionBadCount = records.filter(r => r.condition === 'bad').length;
-    const poopDifferentCount = records.filter(
-      r => r.poop === 'slightly' || r.poop === 'different',
-    ).length;
-    const specialNoteCount = records.filter(r => r.specialNote).length;
+    const poopDifferentCount = records.filter(r => r.poop === 'slightly' || r.poop === 'different').length;
+    const hasSpecialNote = records.some(r => r.specialNote);
 
-    const insights: string[] = [];
+    const hasMeal = mealLessCount >= (records.length === 1 ? 1 : 2);
+    const hasWater = waterLessCount >= (records.length === 1 ? 1 : 2);
+    const hasActivity = activityLessCount >= (records.length === 1 ? 1 : 2);
+    const hasPoop = poopDifferentCount >= (records.length === 1 ? 1 : 2);
+    const hasCond = conditionBadCount > 0;
+    const concernCount = [hasMeal, hasWater, hasActivity, hasPoop, hasCond].filter(Boolean).length;
 
-    if (mealLessCount >= 3) {
-      insights.push(`최근 ${records.length}일간 식사량이 평소보다 적은 날이 ${mealLessCount}일 있어요`);
-    }
-    if (activityLessCount >= 3) {
-      insights.push(`산책량이 줄어든 날이 자주 보여요 (${activityLessCount}일)`);
-    }
-    if (poopDifferentCount >= 2) {
-      insights.push(`배변 상태가 평소와 다른 날이 ${poopDifferentCount}일 있었어요`);
-    }
-    if (conditionBadCount > 0) {
-      insights.push(`컨디션이 안 좋아 보인 날이 ${conditionBadCount}일 있었어요`);
-    }
-    if (specialNoteCount > 0) {
-      insights.push(`특이사항이 기록된 날이 ${specialNoteCount}일 있어요`);
-    }
-    if (insights.length === 0) {
-      insights.push('컨디션이 안정적으로 유지되고 있어요');
+    if (records.length === 1) {
+      if (concernCount === 0 && !hasSpecialNote) return ['오늘 무난해 보여요'];
+      if (hasCond && concernCount >= 2) return ['오늘 컨디션이 조금 다르게 보여요'];
+      if (hasCond) return ['컨디션이 평소와 달라 보여요'];
+      if (hasMeal && hasWater) return ['식사·음수가 평소보다 적어요'];
+      if (hasMeal) return ['식사가 평소보다 조금 적어요'];
+      if (hasWater) return ['음수가 평소보다 적어요'];
+      if (hasActivity) return ['활동이 평소보다 조금 적어요'];
+      if (hasPoop) return ['배변이 평소와 달라 보여요'];
+      if (hasSpecialNote) return ['특이사항이 기록돼 있어요'];
+      return ['오늘 평소와 다른 점이 있어요'];
     }
 
-    return insights;
+    if (concernCount === 0 && !hasSpecialNote) return ['최근 흐름이 안정적이에요'];
+    if (concernCount >= 2) return ['최근에 패턴이 조금 보여요'];
+    if (hasCond) return ['컨디션이 달라진 날이 있어요'];
+    if (hasMeal) return ['식사가 적은 날이 있어요'];
+    if (hasWater) return ['음수가 적은 날이 있어요'];
+    if (hasActivity) return ['활동이 줄어든 날이 있어요'];
+    if (hasPoop) return ['배변이 달랐던 날이 있어요'];
+    if (hasSpecialNote) return ['특이사항이 있었던 날이 있어요'];
+    return ['최근 흐름이 안정적이에요'];
   }, [records]);
 
   // 상태 아이콘 렌더링
-  const renderStatusIcon = (value: string, type: 'meal' | 'poop' | 'activity' | 'condition') => {
+  const renderStatusIcon = (value: string, type: 'meal' | 'water' | 'poop' | 'activity' | 'condition') => {
     const isGood =
       (type === 'meal' && value === 'good') ||
+      (type === 'water' && value === 'normal') ||
       (type === 'poop' && value === 'normal') ||
       (type === 'activity' && value === 'similar') ||
       (type === 'condition' && value === 'good');
 
     const isBad =
       (type === 'meal' && value === 'little') ||
+      (type === 'water' && value === 'less') ||
       (type === 'poop' && value === 'different') ||
       (type === 'activity' && value === 'much_less') ||
       (type === 'condition' && value === 'bad');
@@ -166,12 +143,17 @@ export function RecentStatusTrendScreen() {
   };
 
   // 상태 레이블
-  const getStatusLabel = (value: string, type: 'meal' | 'poop' | 'activity' | 'condition') => {
+  const getStatusLabel = (value: string, type: 'meal' | 'water' | 'poop' | 'activity' | 'condition') => {
     const labels: Record<string, Record<string, string>> = {
       meal: {
         good: '잘 먹었어요',
         less: '평소보다 적었어요',
         little: '거의 안 먹었어요',
+      },
+      water: {
+        normal: '평소와 같아요',
+        less: '적었어요',
+        more: '많았어요',
       },
       poop: {
         normal: '평소와 같아요',
@@ -247,7 +229,14 @@ export function RecentStatusTrendScreen() {
         {/* 일별 기록 - 테이블 형식 */}
         <View style={styles.recordsSection}>
           <Text style={styles.sectionTitle}>일별 기록</Text>
-          
+
+          {records.length === 0 ? (
+            <View style={styles.emptyRecords}>
+              <Text style={styles.emptyRecordsText}>아직 기록이 없어요</Text>
+              <Text style={styles.emptyRecordsSub}>오늘 상태 체크를 하면 여기에 요약이 쌓여요</Text>
+            </View>
+          ) : (
+          <>
           {/* 테이블 헤더 */}
           <View style={styles.tableHeader}>
             <View style={[styles.tableCell, styles.tableCellDate]}>
@@ -255,6 +244,9 @@ export function RecentStatusTrendScreen() {
             </View>
             <View style={[styles.tableCell, styles.tableCellStatus]}>
               <Text style={styles.tableHeaderText}>식사</Text>
+            </View>
+            <View style={[styles.tableCell, styles.tableCellStatus]}>
+              <Text style={styles.tableHeaderText}>음수</Text>
             </View>
             <View style={[styles.tableCell, styles.tableCellStatus]}>
               <Text style={styles.tableHeaderText}>배변</Text>
@@ -292,6 +284,9 @@ export function RecentStatusTrendScreen() {
                 {renderStatusIcon(record.meal, 'meal')}
               </View>
               <View style={[styles.tableCell, styles.tableCellStatus]}>
+                {renderStatusIcon(record.water, 'water')}
+              </View>
+              <View style={[styles.tableCell, styles.tableCellStatus]}>
                 {renderStatusIcon(record.poop, 'poop')}
               </View>
               <View style={[styles.tableCell, styles.tableCellStatus]}>
@@ -318,6 +313,8 @@ export function RecentStatusTrendScreen() {
                   </View>
                 ))}
             </View>
+          )}
+          </>
           )}
         </View>
 
@@ -596,6 +593,26 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     lineHeight: 18,
     textAlign: 'center',
+  },
+  emptyRecords: {
+    paddingVertical: 32,
+    alignItems: 'center',
+    backgroundColor: '#FFF9F0',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#FFE5D9',
+    marginTop: 8,
+  },
+  emptyRecordsText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1A202C',
+    marginBottom: 8,
+  },
+  emptyRecordsSub: {
+    fontSize: 13,
+    color: '#718096',
+    fontWeight: '500',
   },
 });
 

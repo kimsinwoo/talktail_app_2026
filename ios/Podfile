@@ -17,6 +17,11 @@ end
 target 'talktail' do
   config = use_native_modules!
 
+  # FCM 푸시 알림 (GoogleService-Info.plist 사용). Swift static lib 호환을 위해 modular_headers
+  pod 'GoogleUtilities', :modular_headers => true
+  pod 'Firebase/Core', :modular_headers => true
+  pod 'Firebase/Messaging', :modular_headers => true
+
   use_react_native!(
     :path => config[:reactNativePath],
     # An absolute path to your application root.

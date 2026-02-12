@@ -1,4 +1,4 @@
-import React, {useState, useEffect} from 'react';
+import React, {useState, useEffect, useCallback} from 'react';
 import {
   SafeAreaView,
   StyleSheet,
@@ -8,7 +8,9 @@ import {
   TouchableOpacity,
   KeyboardAvoidingView,
   Platform,
+  Linking,
 } from 'react-native';
+import {Eye, EyeOff} from 'lucide-react-native';
 import {useIsFocused} from '@react-navigation/native';
 import {deviceStore} from '../store/deviceStore';
 import Toast from 'react-native-toast-message';
@@ -25,6 +27,7 @@ export function LoginScreen({onLoginSuccess, navigation}: LoginScreenProps) {
     password: '',
   });
   const [errors, setErrors] = useState<{[key: string]: string}>({});
+  const [showPassword, setShowPassword] = useState(false);
 
   const {
     login,
@@ -33,6 +36,11 @@ export function LoginScreen({onLoginSuccess, navigation}: LoginScreenProps) {
     loginLoading,
     offLoginSuccess,
     offLoginError,
+    startGoogleOAuth,
+    handleGoogleOAuthCallback,
+    googleLoginLoading,
+    googleLoginError,
+    offGoogleLoginError,
   } = deviceStore();
 
   // 로그인 성공 처리
@@ -62,12 +70,55 @@ export function LoginScreen({onLoginSuccess, navigation}: LoginScreenProps) {
     }
   }, [loginError, isFocused, offLoginError]);
 
+  // Google 로그인 에러 처리
+  useEffect(() => {
+    if (googleLoginError && isFocused) {
+      Toast.show({
+        type: 'error',
+        text1: 'Google 로그인 실패',
+        text2: googleLoginError,
+      });
+      offGoogleLoginError();
+    }
+  }, [googleLoginError, isFocused, offGoogleLoginError]);
+
+  // 딥링크: talktail://oauth/google/callback?code=...&state=...
+  const handleOpenURL = useCallback(
+    (url: string) => {
+      const prefix = 'talktail://oauth/google/callback';
+      if (!url.startsWith(prefix)) return;
+      const q = url.indexOf('?');
+      if (q === -1) return;
+      const query = url.slice(q + 1);
+      const params = Object.fromEntries(query.split('&').map(p => {
+        const [k, v] = p.split('=');
+        return [k, v ? decodeURIComponent(v) : ''];
+      }));
+      const code = params.code;
+      const state = params.state;
+      if (code && state) handleGoogleOAuthCallback(code, state);
+    },
+    [handleGoogleOAuthCallback],
+  );
+
+  useEffect(() => {
+    const sub = Linking.addEventListener('url', ({url}) => handleOpenURL(url));
+    Linking.getInitialURL().then(initial => {
+      if (initial) handleOpenURL(initial);
+    });
+    return () => sub.remove();
+  }, [handleOpenURL]);
+
+  const onPressGoogleLogin = async () => {
+    const url = await startGoogleOAuth();
+    if (url) Linking.openURL(url);
+  };
 
   const validateForm = (): boolean => {
     const newErrors: {[key: string]: string} = {};
 
     if (!formData.id) {
-      newErrors.id = '아이디를 입력해주세요.';
+      newErrors.id = '이메일 또는 아이디를 입력해주세요.';
     }
 
     if (!formData.password) {
@@ -110,15 +161,15 @@ export function LoginScreen({onLoginSuccess, navigation}: LoginScreenProps) {
 
           <View style={styles.form}>
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>아이디</Text>
+              <Text style={styles.label}>이메일 또는 아이디</Text>
               <TextInput
                 style={[styles.input, errors.id && styles.inputError]}
                 value={formData.id}
                 onChangeText={text => {
                   setFormData(prev => ({...prev, id: text}));
-                  setErrors(prev => ({...prev, id: undefined}));
+                  setErrors(prev => ({...prev, id: ''}));
                 }}
-                placeholder="이메일을 입력하세요"
+                placeholder="이메일 또는 아이디를 입력하세요"
                 placeholderTextColor="#999999"
                 autoCapitalize="none"
               />
@@ -129,17 +180,25 @@ export function LoginScreen({onLoginSuccess, navigation}: LoginScreenProps) {
 
             <View style={styles.inputGroup}>
               <Text style={styles.label}>비밀번호</Text>
-              <TextInput
-                style={[styles.input, errors.password && styles.inputError]}
-                value={formData.password}
-                onChangeText={text => {
-                  setFormData(prev => ({...prev, password: text}));
-                  setErrors(prev => ({...prev, password: undefined}));
-                }}
-                placeholder="비밀번호를 입력하세요"
-                placeholderTextColor="#999999"
-                secureTextEntry
-              />
+              <View style={[styles.passwordRow, errors.password && styles.inputError]}>
+                <TextInput
+                  style={[styles.input, styles.passwordInput]}
+                  value={formData.password}
+                  onChangeText={text => {
+                    setFormData(prev => ({...prev, password: text}));
+                    setErrors(prev => ({...prev, password: ''}));
+                  }}
+                  placeholder="비밀번호를 입력하세요"
+                  placeholderTextColor="#999999"
+                  secureTextEntry={!showPassword}
+                />
+                <TouchableOpacity
+                  onPress={() => setShowPassword(prev => !prev)}
+                  style={styles.eyeButton}
+                  hitSlop={{top: 12, bottom: 12, left: 12, right: 12}}>
+                  {showPassword ? <EyeOff size={22} color="#666" /> : <Eye size={22} color="#666" />}
+                </TouchableOpacity>
+              </View>
               {errors.password && (
                 <Text style={styles.errorText}>{errors.password}</Text>
               )}
@@ -166,16 +225,16 @@ export function LoginScreen({onLoginSuccess, navigation}: LoginScreenProps) {
             </TouchableOpacity>
 
             <View style={styles.findAccountContainer}>
-              <TouchableOpacity disabled>
-                <Text style={styles.findAccountText}>
-                  아이디 찾기(준비중)
-                </Text>
+              <TouchableOpacity
+                onPress={() => navigation?.navigate('FindId')}
+                activeOpacity={0.7}>
+                <Text style={styles.findAccountText}>아이디 찾기</Text>
               </TouchableOpacity>
               <Text style={styles.findAccountDivider}>|</Text>
-              <TouchableOpacity disabled>
-                <Text style={styles.findAccountText}>
-                  비밀번호 찾기(준비중)
-                </Text>
+              <TouchableOpacity
+                onPress={() => navigation?.navigate('ForgotPassword')}
+                activeOpacity={0.7}>
+                <Text style={styles.findAccountText}>비밀번호 찾기</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -240,6 +299,22 @@ const styles = StyleSheet.create({
     color: '#333333',
     width: '100%',
   },
+  passwordRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    borderRadius: 8,
+    backgroundColor: '#FFFFFF',
+  },
+  passwordInput: {
+    flex: 1,
+    borderWidth: 0,
+    marginBottom: 0,
+  },
+  eyeButton: {
+    padding: 12,
+  },
   inputError: {
     borderColor: '#FF3B30',
   },
@@ -262,6 +337,22 @@ const styles = StyleSheet.create({
   submitButtonText: {
     color: '#FFFFFF',
     fontSize: 18,
+    fontWeight: '600',
+  },
+  googleButton: {
+    width: '100%',
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  googleButtonText: {
+    color: '#333333',
+    fontSize: 16,
     fontWeight: '600',
   },
   signupButton: {

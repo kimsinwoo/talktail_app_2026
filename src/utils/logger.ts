@@ -32,18 +32,23 @@ class MetroLogger {
       platform: Platform.OS,
     };
 
-    // 히스토리에 추가
-    this.logHistory.push(entry);
-    if (this.logHistory.length > this.MAX_HISTORY) {
-      this.logHistory.shift();
+    // 히스토리는 개발 환경에서만 유지 (프로덕션 메모리 절약)
+    if (__DEV__) {
+      this.logHistory.push(entry);
+      if (this.logHistory.length > this.MAX_HISTORY) {
+        this.logHistory.shift();
+      }
     }
 
     return entry;
   }
 
   private printLog(entry: LogEntry) {
+    // 프로덕션 빌드에서는 콘솔 출력 스킵 (성능·보안)
+    if (!__DEV__) return;
+
     const {timestamp, level, tag, message, data, appState, platform} = entry;
-    
+
     // Metro에서 잘 보이도록 포맷팅
     const time = new Date(timestamp).toLocaleTimeString('ko-KR', {
       hour12: false,
@@ -190,3 +195,11 @@ export const logWarn = (tag: string, message: string, data?: any) => logger.warn
 export const logError = (tag: string, message: string, data?: any) => logger.error(tag, message, data);
 export const logCritical = (tag: string, message: string, data?: any) => logger.critical(tag, message, data);
 export const logBLE = (tag: string, message: string, data?: any) => logger.ble(tag, message, data);
+
+/** 개발 환경에서만 로그 (프로덕션 no-op). 단순 디버깅용 */
+export const devLog = (...args: unknown[]) => {
+  if (__DEV__) console.log(...args);
+};
+export const devWarn = (...args: unknown[]) => {
+  if (__DEV__) console.warn(...args);
+};

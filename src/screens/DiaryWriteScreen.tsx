@@ -32,6 +32,7 @@ import {
   DollarSign,
 } from 'lucide-react-native';
 import Toast from 'react-native-toast-message';
+import {createOrUpdateDiary} from '../services/diaryApi';
 
 // 체크포인트 항목 타입
 // interface CheckpointItem {
@@ -283,28 +284,31 @@ export function DiaryWriteScreen() {
       return;
     }
 
-    setIsSaving(true);
-
-    try {
-      // TODO: API 연동
-      await new Promise<void>(resolve => setTimeout(resolve, 1000));
-
-      Toast.show({
-        type: 'success',
-        text1: '일기가 저장되었어요!',
-        position: 'bottom',
-      });
-
-      navigation.goBack();
-    } catch (error) {
-      Toast.show({
-        type: 'error',
-        text1: '저장에 실패했어요. 다시 시도해주세요.',
-        position: 'bottom',
-      });
-    } finally {
-      setIsSaving(false);
+    if (!petCode) {
+      Toast.show({ type: 'error', text1: '반려동물 정보가 없어요', position: 'bottom' });
+      return;
     }
+
+    setIsSaving(true);
+    const today = new Date().toISOString().slice(0, 10);
+    createOrUpdateDiary(petCode, {
+      date: today,
+      title: title.trim(),
+      content: content.trim(),
+      mood,
+      weather: weather || 'sunny',
+      activities: selectedActivities,
+      photos,
+      checkpoints: [],
+    })
+      .then(() => {
+        Toast.show({ type: 'success', text1: '일기가 저장되었어요!', position: 'bottom' });
+        navigation.goBack();
+      })
+      .catch(() => {
+        Toast.show({ type: 'error', text1: '저장에 실패했어요. 다시 시도해주세요.', position: 'bottom' });
+      })
+      .finally(() => setIsSaving(false));
   };
 
   // 취소 처리

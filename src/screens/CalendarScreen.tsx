@@ -26,46 +26,15 @@ import {SafeAreaView} from 'react-native-safe-area-context';
 import {useNavigation, useRoute} from '@react-navigation/native';
 import {userStore} from '../store/userStore';
 import Toast from 'react-native-toast-message';
+import {getCalendarCheckDates} from '../services/dailyCheckApi';
+import {getCalendarDiaryDates} from '../services/diaryApi';
 
 const {width: SCREEN_WIDTH} = Dimensions.get('window');
-// flex를 사용하므로 정확한 너비 계산은 필요 없지만, 요일 헤더 정렬을 위해 참고용으로 계산
-const CALENDAR_MARGIN = 16 * 2; // 좌우 마진
-const CALENDAR_PADDING = 4; // 그리드 내부 패딩
-const CALENDAR_BORDER = 1; // 그리드 테두리
+const CALENDAR_MARGIN = 16 * 2;
+const CALENDAR_PADDING = 4;
+const CALENDAR_BORDER = 1;
 const AVAILABLE_WIDTH = SCREEN_WIDTH - CALENDAR_MARGIN - (CALENDAR_PADDING * 2) - (CALENDAR_BORDER * 2);
-const DAY_WIDTH = AVAILABLE_WIDTH / 7; // 7일로 나누기 (요일 헤더용)
-
-// 임시 데이터: 상태 체크와 일기를 작성한 날짜
-const TEMP_CHECK_DATES = [
-  '2026-01-15',
-  '2026-01-16',
-  '2026-01-17',
-  '2026-01-19',
-  '2026-01-20',
-  '2026-01-21',
-  '2026-01-22',
-  '2026-01-23',
-  '2026-01-24',
-  '2026-01-25',
-  '2026-01-26',
-  '2026-01-27',
-  '2026-01-28',
-  '2026-01-29',
-  '2026-01-30',
-  '2026-01-31',
-];
-
-const TEMP_DIARY_DATES = [
-  '2026-01-15',
-  '2026-01-16',
-  '2026-01-18',
-  '2026-01-20',
-  '2026-01-22',
-  '2026-01-24',
-  '2026-01-26',
-  '2026-01-28',
-  '2026-01-30',
-];
+const DAY_WIDTH = AVAILABLE_WIDTH / 7;
 
 // 특이사항 타입 (병원 내원 기록 등)
 interface SpecialNote {
@@ -112,7 +81,36 @@ export function CalendarScreen() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [isNoteModalVisible, setIsNoteModalVisible] = useState(false);
   const [specialNotes, setSpecialNotes] = useState<SpecialNote[]>(TEMP_SPECIAL_NOTES);
-  
+  const [checkDates, setCheckDates] = useState<string[]>([]);
+  const [dailyCheckSpecialNotes, setDailyCheckSpecialNotes] = useState<Record<string, string>>({});
+  const [diaryDates, setDiaryDates] = useState<string[]>([]);
+  const effectivePetCode = petCode || currentPet?.pet_code;
+
+  React.useEffect(() => {
+    if (!effectivePetCode) return;
+    const y = currentDate.getFullYear();
+    const m = currentDate.getMonth() + 1;
+    Promise.all([
+      getCalendarCheckDates(effectivePetCode, y, m),
+      getCalendarDiaryDates(effectivePetCode, y, m),
+    ])
+      .then(([c, d]) => {
+        setCheckDates(c.checkDates);
+        setDailyCheckSpecialNotes(
+          c.specialNotes.reduce<Record<string, string>>((acc, { date, specialNote }) => {
+            acc[date] = specialNote;
+            return acc;
+          }, {}),
+        );
+        setDiaryDates(d);
+      })
+      .catch(() => {
+        setCheckDates([]);
+        setDailyCheckSpecialNotes({});
+        setDiaryDates([]);
+      });
+  }, [effectivePetCode, currentDate.getFullYear(), currentDate.getMonth()]);
+
   // 특이사항 입력 폼 상태
   const [noteType, setNoteType] = useState<'hospital' | 'vaccination' | 'medicine' | 'other'>('hospital');
   const [noteTitle, setNoteTitle] = useState('');
@@ -190,15 +188,8 @@ export function CalendarScreen() {
     setCurrentDate(new Date());
   };
 
-  // 날짜에 상태 체크가 있는지 확인
-  const hasHealthCheck = (dateStr: string) => {
-    return TEMP_CHECK_DATES.includes(dateStr);
-  };
-
-  // 날짜에 일기가 있는지 확인
-  const hasDiary = (dateStr: string) => {
-    return TEMP_DIARY_DATES.includes(dateStr);
-  };
+  const hasHealthCheck = (dateStr: string) => checkDates.includes(dateStr);
+  const hasDiary = (dateStr: string) => diaryDates.includes(dateStr);
 
   // 오늘 날짜인지 확인
   const isToday = (dateStr: string) => {
@@ -207,9 +198,9 @@ export function CalendarScreen() {
     return dateStr === todayStr;
   };
 
-  // 날짜에 특이사항이 있는지 확인
+  // 날짜에 특이사항이 있는지 확인 (캘린더 직접 입력 + 상태 체크 특이사항)
   const hasSpecialNote = (dateStr: string) => {
-    return specialNotes.some(note => note.date === dateStr);
+    return specialNotes.some(note => note.date === dateStr) || !!dailyCheckSpecialNotes[dateStr];
   };
 
   // 날짜 클릭 핸들러
@@ -506,6 +497,13 @@ export function CalendarScreen() {
               style={styles.modalScrollView}
               contentContainerStyle={styles.modalScrollContent}
               showsVerticalScrollIndicator={false}>
+              {/* 상태 체크에서 기입한 특이사항 (읽기 전용) */}
+              {selectedDate && dailyCheckSpecialNotes[selectedDate] && (
+                <View style={styles.statusCheckNoteSection}>
+                  <Text style={styles.statusCheckNoteLabel}>📋 상태 체크 특이사항</Text>
+                  <Text style={styles.statusCheckNoteText}>{dailyCheckSpecialNotes[selectedDate]}</Text>
+                </View>
+              )}
               {/* 타입 선택 */}
               <View style={styles.formSection}>
                 <Text style={styles.formLabel}>종류</Text>
@@ -945,6 +943,27 @@ const styles = StyleSheet.create({
   },
   modalScrollContent: {
     paddingBottom: 20,
+  },
+  statusCheckNoteSection: {
+    marginHorizontal: 20,
+    marginTop: 12,
+    marginBottom: 8,
+    padding: 14,
+    backgroundColor: '#FFF8E6',
+    borderRadius: 10,
+    borderLeftWidth: 4,
+    borderLeftColor: '#FFB02E',
+  },
+  statusCheckNoteLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#92400E',
+    marginBottom: 6,
+  },
+  statusCheckNoteText: {
+    fontSize: 14,
+    color: '#333',
+    lineHeight: 20,
   },
   // 폼 스타일
   formSection: {

@@ -24,56 +24,90 @@ class NotificationService {
   private readonly NOTIFICATION_COOLDOWN = 60000; // 1분 쿨다운
   private readonly DEVICE_NOTIFICATION_COOLDOWN = 5000; // 5초 쿨다운 (연결/끊김 알림)
   private readonly GLOBAL_NOTIFICATION_COOLDOWN = 60000; // ✅ 전역 notification 쿨다운 (1분)
+  /** notifee 초기화 성공 여부. Expo 등 다른 알림 라이브러리 사용 시 실패해도 앱/로그인은 정상 동작 */
+  private _initialized = false;
+  /** 알림 클릭 시 호출할 콜백 (예: 디바이스 끊김 시 상세 화면 이동) */
+  private _pressedListeners: Array<(data: Record<string, unknown>) => void> = [];
 
-  async initialize() {
-    // 알림 채널 생성 (Android)
-    if (Platform.OS === 'android') {
-      await notifee.createChannel({
-        id: 'health-alerts',
-        name: '건강 알림',
-        importance: AndroidImportance.HIGH,
-        sound: 'default',
-        vibration: true,
+  async initialize(): Promise<void> {
+    try {
+      // 알림 채널 생성 (Android)
+      if (Platform.OS === 'android') {
+        await notifee.createChannel({
+          id: 'health-alerts',
+          name: '건강 알림',
+          importance: AndroidImportance.HIGH,
+          sound: 'default',
+          vibration: true,
+        });
+
+        await notifee.createChannel({
+          id: 'shopping',
+          name: '쇼핑 알림',
+          importance: AndroidImportance.DEFAULT,
+          sound: 'default',
+        });
+
+        await notifee.createChannel({
+          id: 'general',
+          name: '일반 알림',
+          importance: AndroidImportance.DEFAULT,
+          sound: 'default',
+        });
+
+        await notifee.createChannel({
+          id: 'background',
+          name: '백그라운드 알림',
+          importance: AndroidImportance.HIGH,
+          sound: 'default',
+          vibration: true,
+        });
+      }
+
+      // 포그라운드/백그라운드 알림 클릭 시 리스너 호출 (디바이스 끊김 등 화면 이동용)
+      const emitPressed = (data: Record<string, unknown> | undefined) => {
+        if (data && this._pressedListeners.length > 0) {
+          this._pressedListeners.forEach(cb => {
+            try {
+              cb(data);
+            } catch (e) {
+              console.warn('알림 클릭 리스너 오류:', e);
+            }
+          });
+        }
+      };
+
+      notifee.onForegroundEvent(({type, detail}) => {
+        if (type === EventType.PRESS) {
+          console.log('알림 클릭:', detail.notification);
+          emitPressed(detail.notification?.data as Record<string, unknown> | undefined);
+        }
       });
 
-      await notifee.createChannel({
-        id: 'shopping',
-        name: '쇼핑 알림',
-        importance: AndroidImportance.DEFAULT,
-        sound: 'default',
+      notifee.onBackgroundEvent(async ({type, detail}) => {
+        if (type === EventType.PRESS) {
+          console.log('백그라운드 알림 클릭:', detail.notification);
+          emitPressed(detail.notification?.data as Record<string, unknown> | undefined);
+        }
       });
 
-      await notifee.createChannel({
-        id: 'general',
-        name: '일반 알림',
-        importance: AndroidImportance.DEFAULT,
-        sound: 'default',
-      });
-
-      await notifee.createChannel({
-        id: 'background',
-        name: '백그라운드 알림',
-        importance: AndroidImportance.HIGH,
-        sound: 'default',
-        vibration: true,
-      });
+      this._initialized = true;
+    } catch (error) {
+      console.warn('알림 서비스 초기화 실패 (앱/로그인은 정상 동작):', error);
+      this._initialized = false;
     }
+  }
 
-    // 백그라운드 이벤트 리스너
-    notifee.onForegroundEvent(({type, detail}) => {
-      if (type === EventType.PRESS) {
-        console.log('알림 클릭:', detail.notification);
-      }
-    });
-
-    notifee.onBackgroundEvent(async ({type, detail}) => {
-      if (type === EventType.PRESS) {
-        console.log('백그라운드 알림 클릭:', detail.notification);
-      }
-    });
+  /** 알림 클릭 시 호출될 리스너 등록 (예: DEVICE_DISCONNECTED 시 디바이스 상세로 이동) */
+  addNotificationPressedListener(cb: (data: Record<string, unknown>) => void): () => void {
+    this._pressedListeners.push(cb);
+    return () => {
+      this._pressedListeners = this._pressedListeners.filter(l => l !== cb);
+    };
   }
 
   async requestPermission(): Promise<boolean> {
+    if (!this._initialized) return false;
     try {
       const settings = await notifee.requestPermission();
       const hasPermission = settings.authorizationStatus >= 1;
@@ -91,6 +125,7 @@ class NotificationService {
     force: boolean = false,
     bypassGlobalCooldown: boolean = false, // ✅ 전역 쿨다운 우회 옵션
   ) {
+    if (!this._initialized) return;
     // ✅ 전역 notification 쿨다운 체크 (1분에 최대 한 번)
     const now = Date.now();
     if (!bypassGlobalCooldown && now - this.lastAnyNotification < this.GLOBAL_NOTIFICATION_COOLDOWN) {

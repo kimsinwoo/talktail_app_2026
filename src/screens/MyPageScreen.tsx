@@ -24,7 +24,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
 import { orgStore } from '../store/orgStore';
 import { userStore } from '../store/userStore';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 
 interface MyPageScreenProps {
   // onAddToCart?: (productId: number) => void; // 스토어 기능 임시 비활성화
@@ -73,6 +73,14 @@ const menuItems = [
   //   bgColor: '#FFF4E6',
   // },
   {
+    id: 'hubList',
+    icon: Package,
+    title: '허브·디바이스 데이터',
+    subtitle: '허브/디바이스 목록 및 텔레메트리',
+    color: '#0ea5e9',
+    bgColor: '#E0F2FE',
+  },
+  {
     id: 'notifications',
     icon: Bell,
     title: '알림 설정',
@@ -92,7 +100,18 @@ const menuItems = [
 
 export function MyPageScreen({ onAddToCart }: MyPageScreenProps) {
   const navigation = useNavigation();
+  const route = useRoute();
   const [refreshing, setRefreshing] = useState(false);
+
+  // 페이지 진입 시 경로 정보 출력
+  useFocusEffect(
+    React.useCallback(() => {
+      console.log('[📍 페이지 진입] MyPageScreen');
+      console.log('  - Route Name:', route.name);
+      console.log('  - Route Params:', JSON.stringify(route.params || {}, null, 2));
+      console.log('  - Route Key:', route.key);
+    }, [route.name, route.params, route.key]),
+  );
 
   // orgStore에서 사용자 정보 가져오기
   const orgState = orgStore();
@@ -166,6 +185,9 @@ export function MyPageScreen({ onAddToCart }: MyPageScreenProps) {
       // case 'payment':
       //   (navigation as any).navigate('PaymentMethods');
       //   break;
+      case 'hubList':
+        (navigation as any).navigate('HubList');
+        break;
       case 'notifications':
         (navigation as any).navigate('NotificationSettings');
         break;

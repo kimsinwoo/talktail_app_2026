@@ -21,6 +21,8 @@ import {
   Trash2,
   Settings,
   Lock,
+  CheckCircle2,
+  Circle,
 } from 'lucide-react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
@@ -63,6 +65,13 @@ export function HubDeviceManagementScreen() {
   const [isSearchingByHub, setIsSearchingByHub] = useState<Record<string, boolean>>({});
   const [selectedDeviceForPet, setSelectedDeviceForPet] = useState<{hubAddress: string; deviceAddress: string} | null>(null);
   const [showPetConnectModal, setShowPetConnectModal] = useState(false);
+  // ✅ 찾은 디바이스 목록 (등록되지 않은 디바이스)
+  const [foundDevicesByHub, setFoundDevicesByHub] = useState<Record<string, string[]>>({});
+  // ✅ 찾은 디바이스 선택 모달 표시 여부
+  const [showFoundDevicesModal, setShowFoundDevicesModal] = useState<Record<string, boolean>>({});
+  // ✅ 디바이스 등록을 위한 선택 및 이름 draft
+  const [selectedMacsByHub, setSelectedMacsByHub] = useState<Record<string, Record<string, boolean>>>({});
+  const [registerDraftsByHub, setRegisterDraftsByHub] = useState<Record<string, Record<string, string>>>({});
 
   // 허브 프로비저닝 관련 state
   const [hubScanLoading, setHubScanLoading] = useState(false);
@@ -151,6 +160,180 @@ export function HubDeviceManagementScreen() {
 
   // ✅ HUB_ACTIVITY 이벤트는 Wi-Fi 연결 성공 후에만 처리하도록 제거
   // Wi-Fi 연결 성공 메시지가 먼저 처리되도록 함
+
+  // ✅ CONNECTED_DEVICES 이벤트 처리 - 찾은 디바이스 목록 저장
+  useEffect(() => {
+    const off = hubSocketService.on('CONNECTED_DEVICES', async (payload: any) => {
+      console.log('[HubDeviceManagementScreen] CONNECTED_DEVICES 이벤트 수신:', payload);
+      const hubAddress = String(
+        payload?.hubAddress || payload?.hubId || payload?.hub_address || '',
+      );
+      if (!hubAddress) {
+        console.log('[HubDeviceManagementScreen] hubAddress 없음, 무시');
+        return;
+      }
+
+      // ✅ 전역 스토어에서 최신 연결된 디바이스 목록 가져오기
+      const latestDevices = hubStatusStore
+        .getState()
+        .getConnectedDevices(hubAddress);
+      console.log('[HubDeviceManagementScreen] 최신 연결된 디바이스:', latestDevices);
+
+      if (latestDevices.length === 0) {
+        console.log('[HubDeviceManagementScreen] 연결된 디바이스 없음');
+        setIsSearchingByHub(prev => ({...prev, [hubAddress]: false}));
+        return;
+      }
+
+      // ✅ 등록된 디바이스 목록을 API에서 최신 상태로 가져오기
+      try {
+        const response = await apiService.get<{success: boolean; data: HubDevice[]}>(`/device?hubAddress=${encodeURIComponent(hubAddress)}`);
+        const registeredDevices = (response?.data || []).map(d => d.address);
+        console.log('[HubDeviceManagementScreen] 등록된 디바이스 (API):', registeredDevices);
+        
+        // ✅ 등록되지 않은 디바이스만 필터링 (새로 찾은 디바이스)
+        const foundDevices = latestDevices.filter(
+          mac => !registeredDevices.includes(mac),
+        );
+        console.log('[HubDeviceManagementScreen] 새로 찾은 디바이스:', foundDevices);
+
+        if (foundDevices.length > 0) {
+          console.log('[HubDeviceManagementScreen] 모달 표시:', foundDevices.length, '개 디바이스');
+          // ✅ 찾은 디바이스 목록 저장
+          setFoundDevicesByHub(prev => ({
+            ...prev,
+            [hubAddress]: foundDevices,
+          }));
+          // ✅ 찾은 디바이스 선택 모달 표시
+          setShowFoundDevicesModal(prev => {
+            const newState = {
+              ...prev,
+              [hubAddress]: true,
+            };
+            console.log('[HubDeviceManagementScreen] 모달 상태 업데이트:', newState);
+            return newState;
+          });
+          // ✅ 디바이스 이름 초기화 (draft)
+          foundDevices.forEach(mac => {
+            setRegisterDraftsByHub(prev => ({
+              ...prev,
+              [hubAddress]: {
+                ...prev[hubAddress],
+                [mac]: 'Tailing',
+              },
+            }));
+          });
+          // ✅ 선택 상태 초기화
+          setSelectedMacsByHub(prev => ({
+            ...prev,
+            [hubAddress]: {},
+          }));
+        } else {
+          console.log('[HubDeviceManagementScreen] 새로운 디바이스 없음 (모두 등록됨)');
+          Toast.show({
+            type: 'info',
+            text1: '새로운 디바이스를 찾지 못했습니다',
+            position: 'bottom',
+          });
+        }
+      } catch (error) {
+        console.error('[HubDeviceManagementScreen] 등록된 디바이스 조회 실패:', error);
+        // 에러가 발생해도 모달에 모든 디바이스 표시 (사용자가 선택)
+        setFoundDevicesByHub(prev => ({
+          ...prev,
+          [hubAddress]: latestDevices,
+        }));
+        setShowFoundDevicesModal(prev => ({
+          ...prev,
+          [hubAddress]: true,
+        }));
+        latestDevices.forEach(mac => {
+          setRegisterDraftsByHub(prev => ({
+            ...prev,
+            [hubAddress]: {
+              ...prev[hubAddress],
+              [mac]: 'Tailing',
+            },
+          }));
+        });
+        setSelectedMacsByHub(prev => ({
+          ...prev,
+          [hubAddress]: {},
+        }));
+      }
+
+      // ✅ 검색 완료
+      setIsSearchingByHub(prev => ({...prev, [hubAddress]: false}));
+    });
+    return () => {
+      off();
+    };
+  }, []);
+
+  // ✅ 디바이스 등록 함수
+  const registerSelectedDevices = async (hubAddress: string) => {
+    const selected = selectedMacsByHub[hubAddress] || {};
+    const drafts = registerDraftsByHub[hubAddress] || {};
+    const macs = Object.keys(selected).filter(m => !!selected[m]);
+    
+    if (macs.length === 0) {
+      Toast.show({
+        type: 'info',
+        text1: '등록할 디바이스를 선택해주세요.',
+        position: 'bottom',
+      });
+      return;
+    }
+
+    try {
+      const results = await Promise.all(
+        macs.map(async mac => {
+          const name = (drafts[mac] || 'Tailing').trim() || 'Tailing';
+          try {
+            const res = await apiService.put<{
+              success: boolean;
+              message: string;
+              data: {address: string; name: string; hub_address: string};
+            }>(`/device/${encodeURIComponent(mac)}`, {
+              name: name,
+              hub_address: hubAddress,
+            });
+            return {mac, name, ok: (res as any)?.success || false};
+          } catch {
+            return {mac, name, ok: false};
+          }
+        }),
+      );
+
+      const okOnes = results.filter(r => r.ok);
+      if (okOnes.length > 0) {
+        Toast.show({
+          type: 'success',
+          text1: '등록 완료',
+          text2: `${okOnes.length}개`,
+          position: 'bottom',
+        });
+        await refreshHubDevices(hubAddress);
+        setSelectedMacsByHub(prev => ({...prev, [hubAddress]: {}}));
+        setShowFoundDevicesModal(prev => ({...prev, [hubAddress]: false}));
+        setFoundDevicesByHub(prev => ({...prev, [hubAddress]: []}));
+      } else {
+        Toast.show({
+          type: 'error',
+          text1: '등록 실패',
+          text2: '서버/네트워크를 확인해주세요.',
+          position: 'bottom',
+        });
+      }
+    } catch (error) {
+      Toast.show({
+        type: 'error',
+        text1: '등록 실패',
+        text2: '서버/네트워크를 확인해주세요.',
+        position: 'bottom',
+      });
+    }
+  };
 
   // 허브 스캔 시작
   const startHubScan = async () => {
@@ -408,13 +591,21 @@ export function HubDeviceManagementScreen() {
   };
 
   // Wi‑Fi 선택 처리
-  const handleWifiSelect = (wifi: WiFiInfo) => {
+  const handleWifiSelect = async (wifi: WiFiInfo) => {
     setWifiSSID(wifi.ssid);
     
-    // 암호화되지 않은 Wi-Fi는 비밀번호 입력 불필요
+    // 암호화되지 않은 Wi-Fi는 비밀번호 입력 불필요하고 자동으로 등록 시작
     if (!wifi.isEncrypted) {
       setWifiPassword('');
       setShowPasswordInput(false);
+      // 암호화되지 않은 Wi-Fi는 자동으로 등록 시작 (약간의 지연을 두어 상태 업데이트 후 실행)
+      setTimeout(async () => {
+        try {
+          await provisionHub(wifi.ssid, '');
+        } catch (error) {
+          console.error('[HubDeviceManagementScreen] 자동 등록 실패:', error);
+        }
+      }, 100);
     } else {
       // 암호화된 Wi-Fi는 비밀번호 입력 필요
       setWifiPassword('');
@@ -581,7 +772,7 @@ export function HubDeviceManagementScreen() {
       Toast.show({type: 'info', text1: '디바이스 검색 시작', text2: '20초 동안 검색합니다.', position: 'bottom'});
       setTimeout(() => {
         setIsSearchingByHub(prev => ({...prev, [hubAddress]: false}));
-        refreshHubDevices(hubAddress);
+        // ✅ 자동 새로고침 제거 - CONNECTED_DEVICES 이벤트에서 처리
       }, 20000);
     } catch (error) {
       setIsSearchingByHub(prev => ({...prev, [hubAddress]: false}));
@@ -1121,7 +1312,137 @@ export function HubDeviceManagementScreen() {
             </View>
           </View>
         </View>
-      </Modal>
+        </Modal>
+
+        {/* 찾은 디바이스 선택 모달 */}
+        {hubs.map(hub => {
+          const foundDevices = foundDevicesByHub[hub.address] || [];
+          const isModalOpen = showFoundDevicesModal[hub.address] || false;
+          if (!isModalOpen || foundDevices.length === 0) return null;
+
+          const selectedMacs = selectedMacsByHub[hub.address] || {};
+          const drafts = registerDraftsByHub[hub.address] || {};
+          const selectedCount = Object.values(selectedMacs).filter(Boolean).length;
+
+          return (
+            <Modal
+              key={hub.address}
+              visible={isModalOpen}
+              animationType="slide"
+              transparent={true}
+              onRequestClose={() => {
+                setShowFoundDevicesModal(prev => ({...prev, [hub.address]: false}));
+              }}
+            >
+              <View style={styles.modalOverlay}>
+                <View style={styles.modalContent}>
+                  <View style={styles.modalHeader}>
+                    <View>
+                      <Text style={styles.modalTitle}>디바이스 선택</Text>
+                      <Text style={styles.modalSubtitle}>
+                        등록할 디바이스를 선택하세요 ({foundDevices.length}개 발견)
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      onPress={() => {
+                        setShowFoundDevicesModal(prev => ({...prev, [hub.address]: false}));
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <X size={24} color="#666" />
+                    </TouchableOpacity>
+                  </View>
+
+                  <ScrollView style={styles.modalBody}>
+                    {foundDevices.map(mac => {
+                      const isSelected = selectedMacs[mac] || false;
+                      const draftName = drafts[mac] || 'Tailing';
+
+                      return (
+                        <TouchableOpacity
+                          key={mac}
+                          style={[
+                            styles.foundDeviceItem,
+                            isSelected && styles.foundDeviceItemSelected,
+                          ]}
+                          onPress={() => {
+                            setSelectedMacsByHub(prev => ({
+                              ...prev,
+                              [hub.address]: {
+                                ...prev[hub.address],
+                                [mac]: !isSelected,
+                              },
+                            }));
+                          }}
+                          activeOpacity={0.85}
+                        >
+                          <View style={styles.foundDeviceItemLeft}>
+                            {isSelected ? (
+                              <CheckCircle2 size={20} color="#2E8B7E" />
+                            ) : (
+                              <Circle size={20} color="#E5E7EB" />
+                            )}
+                            <View style={styles.foundDeviceItemInfo}>
+                              <Text style={styles.foundDeviceItemMac}>{mac}</Text>
+                              <TextInput
+                                style={styles.foundDeviceItemNameInput}
+                                value={draftName}
+                                onChangeText={text => {
+                                  setRegisterDraftsByHub(prev => ({
+                                    ...prev,
+                                    [hub.address]: {
+                                      ...prev[hub.address],
+                                      [mac]: text,
+                                    },
+                                  }));
+                                }}
+                                placeholder="디바이스 이름"
+                                placeholderTextColor="#999"
+                                maxLength={20}
+                              />
+                            </View>
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+
+                  <View style={styles.modalFooter}>
+                    <TouchableOpacity
+                      style={styles.modalCancelButton}
+                      onPress={() => {
+                        setShowFoundDevicesModal(prev => ({...prev, [hub.address]: false}));
+                        setFoundDevicesByHub(prev => ({...prev, [hub.address]: []}));
+                        setSelectedMacsByHub(prev => ({...prev, [hub.address]: {}}));
+                      }}
+                      activeOpacity={0.85}
+                    >
+                      <Text style={styles.modalCancelButtonText}>취소</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[
+                        styles.modalPrimaryButton,
+                        selectedCount === 0 && styles.modalPrimaryButtonDisabled,
+                      ]}
+                      onPress={() => registerSelectedDevices(hub.address)}
+                      disabled={selectedCount === 0}
+                      activeOpacity={0.85}
+                    >
+                      <Text
+                        style={[
+                          styles.modalPrimaryButtonText,
+                          selectedCount === 0 && styles.modalPrimaryButtonTextDisabled,
+                        ]}
+                      >
+                        등록 ({selectedCount}개)
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </View>
+            </Modal>
+          );
+        })}
     </SafeAreaView>
   );
 }
@@ -1507,5 +1828,76 @@ const styles = StyleSheet.create({
   petItemDetails: {
     fontSize: 13,
     color: '#666',
+  },
+  modalSubtitle: {
+    fontSize: 13,
+    color: '#6B7280',
+    marginTop: 4,
+    fontWeight: '500',
+  },
+  modalFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+    padding: 20,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+  },
+  modalCancelButton: {
+    flex: 1,
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalCancelButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#6B7280',
+  },
+  modalPrimaryButtonTextDisabled: {
+    color: '#9CA3AF',
+  },
+  foundDeviceItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    backgroundColor: '#F9F9F9',
+    borderRadius: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  foundDeviceItemSelected: {
+    backgroundColor: '#E7F5F4',
+    borderColor: '#2E8B7E',
+  },
+  foundDeviceItemLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    gap: 12,
+  },
+  foundDeviceItemInfo: {
+    flex: 1,
+  },
+  foundDeviceItemMac: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#111827',
+    marginBottom: 6,
+  },
+  foundDeviceItemNameInput: {
+    fontSize: 13,
+    color: '#6B7280',
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    backgroundColor: 'white',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
   },
 });

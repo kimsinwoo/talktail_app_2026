@@ -1,4 +1,4 @@
-import React, {useState, useMemo} from 'react';
+import React, {useState, useMemo, useCallback} from 'react';
 import {
   View,
   Text,
@@ -9,16 +9,17 @@ import {
   FlatList,
   Image,
   Modal,
+  ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import {useNavigation, useRoute} from '@react-navigation/native';
+import {useNavigation, useRoute, useFocusEffect} from '@react-navigation/native';
 import {
   ArrowLeft,
   Search,
   Calendar as CalendarIcon,
   X,
   ChevronRight,
-  DollarSign,
   Camera,
   Smile,
   Meh,
@@ -29,18 +30,13 @@ import {
   ChevronDown,
 } from 'lucide-react-native';
 import {userStore} from '../store/userStore';
+import {searchDiaries, type DiaryEntry as ApiDiaryEntry} from '../services/diaryApi';
 
-// 일기 항목 타입 (DiaryScreen과 동일)
+// 일기 항목 타입 (화면 표시용)
 interface CheckpointItem {
   id: string;
   label: string;
   checked: boolean;
-}
-
-interface ExpenseItem {
-  id: string;
-  category: string;
-  amount: string;
 }
 
 interface DiaryEntry {
@@ -53,153 +49,25 @@ interface DiaryEntry {
   activities: string[];
   photos: string[];
   checkpoints: CheckpointItem[];
-  expenses?: ExpenseItem[];
   petCode: string;
   petName: string;
 }
 
-// 더미 일기 데이터 (DiaryScreen과 동일)
-const dummyDiaries: DiaryEntry[] = [
-  {
-    id: '1',
-    date: '2026-01-22',
-    title: '오늘도 산책 완료!',
-    content: '오늘은 날씨가 좋아서 공원에서 30분 동안 산책했어요. 초코가 다른 강아지 친구도 만났어요. 친구랑 신나게 뛰어놀았답니다!',
-    mood: 'happy',
-    weather: 'sunny',
-    activities: ['산책', '간식'],
-    photos: [
-      'https://images.unsplash.com/photo-1587300003388-59208cc962cb?w=400',
-      'https://images.unsplash.com/photo-1548199973-03cce0bbc87b?w=400',
-    ],
-    checkpoints: [
-      {id: 'c1', label: '아침 산책', checked: true},
-      {id: 'c2', label: '저녁 산책', checked: true},
-      {id: 'c3', label: '간식 급여', checked: true},
-      {id: 'c4', label: '양치', checked: false},
-    ],
-    petCode: 'DUMMY_1',
-    petName: '초코',
-    expenses: [
-      {id: 'exp1', category: 'snack', amount: '15000'},
-      {id: 'exp2', category: 'toy', amount: '25000'},
-    ],
-  },
-  {
-    id: '2',
-    date: '2026-01-21',
-    title: '병원 정기 검진',
-    content: '6개월 정기 검진을 다녀왔어요. 건강하다고 하셨어요! 체중도 적당하대요. 예방접종도 맞았습니다.',
-    mood: 'neutral',
-    weather: 'cloudy',
-    activities: ['병원', '간식'],
-    photos: [
-      'https://images.unsplash.com/photo-1628009368231-7bb7cfcb0def?w=400',
-    ],
-    checkpoints: [
-      {id: 'c1', label: '아침 산책', checked: true},
-      {id: 'c2', label: '병원 방문', checked: true},
-      {id: 'c3', label: '예방접종', checked: true},
-      {id: 'c4', label: '저녁 산책', checked: false},
-    ],
-    petCode: 'DUMMY_1',
-    petName: '초코',
-    expenses: [
-      {id: 'exp1', category: 'hospital', amount: '150000'},
-      {id: 'exp2', category: 'vaccination', amount: '80000'},
-    ],
-  },
-  {
-    id: '3',
-    date: '2026-01-20',
-    title: '비 오는 날 실내 놀이',
-    content: '비가 와서 산책을 못했어요. 집에서 공놀이를 했는데 그래도 신나게 놀았어요. 터그 놀이도 했답니다!',
-    mood: 'neutral',
-    weather: 'rainy',
-    activities: ['실내놀이'],
-    photos: [],
-    checkpoints: [
-      {id: 'c1', label: '실내 놀이', checked: true},
-      {id: 'c2', label: '간식 급여', checked: true},
-      {id: 'c3', label: '양치', checked: true},
-    ],
-    petCode: 'DUMMY_1',
-    petName: '초코',
-    expenses: [
-      {id: 'exp1', category: 'food', amount: '45000'},
-    ],
-  },
-  {
-    id: '4',
-    date: '2026-01-19',
-    title: '새 간식 시식',
-    content: '새로 산 연어 간식을 줬는데 너무 좋아했어요! 앞으로 자주 사줘야겠어요. 훈련할 때 보상으로 줬더니 집중을 잘 해요.',
-    mood: 'happy',
-    weather: 'sunny',
-    activities: ['간식', '훈련'],
-    photos: [
-      'https://images.unsplash.com/photo-1601758228041-f3b2795255f1?w=400',
-      'https://images.unsplash.com/photo-1568640347023-a616a30bc3bd?w=400',
-      'https://images.unsplash.com/photo-1596492784531-6e6eb5ea9993?w=400',
-    ],
-    checkpoints: [
-      {id: 'c1', label: '아침 산책', checked: true},
-      {id: 'c2', label: '훈련 시간', checked: true},
-      {id: 'c3', label: '새 간식 시식', checked: true},
-      {id: 'c4', label: '저녁 산책', checked: true},
-      {id: 'c5', label: '양치', checked: true},
-    ],
-    petCode: 'DUMMY_1',
-    petName: '초코',
-    expenses: [
-      {id: 'exp1', category: 'snack', amount: '35000'},
-      {id: 'exp2', category: 'toy', amount: '18000'},
-    ],
-  },
-  {
-    id: '5',
-    date: '2026-01-18',
-    title: '소화불량 관찰',
-    content: '어제 저녁부터 밥을 잘 안 먹어서 걱정했어요. 다행히 오늘은 괜찮아진 것 같아요. 물은 잘 마셔서 안심이에요.',
-    mood: 'sad',
-    weather: 'cloudy',
-    activities: ['관찰'],
-    photos: [],
-    checkpoints: [
-      {id: 'c1', label: '식사량 체크', checked: true},
-      {id: 'c2', label: '음수량 체크', checked: true},
-      {id: 'c3', label: '배변 상태 확인', checked: true},
-      {id: 'c4', label: '체온 측정', checked: false},
-    ],
-    petCode: 'DUMMY_1',
-    petName: '초코',
-  },
-  {
-    id: '6',
-    date: '2026-01-17',
-    title: '미용 다녀왔어요',
-    content: '오늘 미용실 다녀왔어요. 발톱도 깎고 귀 청소도 했어요. 미용 후에 간식 많이 줬더니 기분이 좋아진 것 같아요!',
-    mood: 'happy',
-    weather: 'sunny',
-    activities: ['미용', '간식'],
-    photos: [
-      'https://images.unsplash.com/photo-1537151625747-768eb6cf92b2?w=400',
-    ],
-    checkpoints: [
-      {id: 'c1', label: '미용실 방문', checked: true},
-      {id: 'c2', label: '발톱 정리', checked: true},
-      {id: 'c3', label: '귀 청소', checked: true},
-      {id: 'c4', label: '목욕', checked: true},
-    ],
-    petCode: 'DUMMY_1',
-    petName: '초코',
-    expenses: [
-      {id: 'exp1', category: 'grooming', amount: '60000'},
-      {id: 'exp2', category: 'clothing', amount: '45000'},
-      {id: 'exp3', category: 'supplies', amount: '25000'},
-    ],
-  },
-];
+function apiToEntry(d: ApiDiaryEntry, petCode: string, petName: string): DiaryEntry {
+  return {
+    id: String(d.id),
+    date: d.date,
+    title: d.title ?? '',
+    content: d.content ?? '',
+    mood: d.mood ?? 'neutral',
+    weather: d.weather ?? 'sunny',
+    activities: Array.isArray(d.activities) ? d.activities : [],
+    photos: Array.isArray(d.photos) ? d.photos : [],
+    checkpoints: Array.isArray(d.checkpoints) ? d.checkpoints : [],
+    petCode,
+    petName,
+  };
+}
 
 // 기분 아이콘 컴포넌트
 const MoodIcon = ({mood, size = 16}: {mood: string; size?: number}) => {
@@ -225,6 +93,9 @@ const WeatherIcon = ({weather, size = 16}: {weather: string; size?: number}) => 
   }
 };
 
+const CURRENT_YEAR = new Date().getFullYear();
+const YEAR_RANGE = 15;
+
 export function DiarySearchScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
@@ -233,8 +104,9 @@ export function DiarySearchScreen() {
 
   const pets = userStore(s => s.pets);
   const currentPet = pets.find(p => p.pet_code === petCode) || pets[0];
+  const effectivePetCode = currentPet?.pet_code ?? petCode ?? '';
+  const effectivePetName = currentPet?.name ?? petName ?? '반려동물';
 
-  // 검색 상태
   const [searchMode, setSearchMode] = useState<'keyword' | 'date'>('keyword');
   const [keyword, setKeyword] = useState('');
   const [selectedYear, setSelectedYear] = useState<string>('');
@@ -244,74 +116,100 @@ export function DiarySearchScreen() {
   const [isMonthPickerVisible, setIsMonthPickerVisible] = useState(false);
   const [isDayPickerVisible, setIsDayPickerVisible] = useState(false);
 
-  // 더미 데이터를 현재 반려동물 정보로 변환
-  const allDiaries = useMemo(() => {
-    return dummyDiaries.map(d => ({
-      ...d,
-      petCode: petCode || d.petCode,
-      petName: petName || d.petName,
-    }));
-  }, [petCode, petName]);
+  const [searchResults, setSearchResults] = useState<DiaryEntry[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [lastSearched, setLastSearched] = useState<{keyword?: string; date?: string} | null>(null);
 
-  // 사용 가능한 년도 목록 추출
-  const availableYears = useMemo(() => {
-    const years = Array.from(new Set(allDiaries.map(d => d.date.split('-')[0])));
-    return years.sort((a, b) => parseInt(b) - parseInt(a));
-  }, [allDiaries]);
+  const runSearch = useCallback(
+    async (params: {keyword?: string; date?: string}) => {
+      if (!effectivePetCode) {
+        setSearchResults([]);
+        return;
+      }
+      setLoading(true);
+      setError(null);
+      try {
+        const {list} = await searchDiaries(effectivePetCode, params);
+        setSearchResults(list.map(d => apiToEntry(d, effectivePetCode, effectivePetName)));
+        setLastSearched(params);
+      } catch (e: any) {
+        setError(e?.message ?? '검색에 실패했어요');
+        setSearchResults([]);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [effectivePetCode, effectivePetName],
+  );
 
-  // 사용 가능한 월 목록 추출 (선택된 년도 기준)
-  const availableMonths = useMemo(() => {
-    if (!selectedYear) return [];
-    const months = Array.from(
-      new Set(
-        allDiaries
-          .filter(d => d.date.startsWith(selectedYear))
-          .map(d => d.date.split('-')[1]),
-      ),
-    );
-    return months.sort((a, b) => parseInt(a) - parseInt(b));
-  }, [allDiaries, selectedYear]);
+  // 키워드 검색: 입력 후 디바운스로 API 호출
+  const [keywordDebounce] = useState(() => {
+    let t: ReturnType<typeof setTimeout> | null = null;
+    return (k: string, pet: string) => {
+      if (t) clearTimeout(t);
+      if (!pet) return;
+      const trimmed = k.trim();
+      if (trimmed.length === 0) {
+        setSearchResults([]);
+        setLastSearched(null);
+        return;
+      }
+      t = setTimeout(() => runSearch({keyword: trimmed}), 400);
+    };
+  });
 
-  // 사용 가능한 일 목록 추출 (선택된 년도/월 기준)
-  const availableDays = useMemo(() => {
-    if (!selectedYear || !selectedMonth) return [];
-    const monthStr = selectedMonth.padStart(2, '0');
-    const days = Array.from(
-      new Set(
-        allDiaries
-          .filter(d => d.date.startsWith(`${selectedYear}-${monthStr}`))
-          .map(d => d.date.split('-')[2]),
-      ),
-    );
-    return days.sort((a, b) => parseInt(a) - parseInt(b));
-  }, [allDiaries, selectedYear, selectedMonth]);
+  useFocusEffect(
+    useCallback(() => {
+      if (!effectivePetCode) return;
+      if (searchMode === 'keyword' && keyword.trim()) {
+        keywordDebounce(keyword, effectivePetCode);
+      } else if (searchMode === 'date' && selectedYear && selectedMonth && selectedDay) {
+        const date = `${selectedYear}-${selectedMonth.padStart(2, '0')}-${selectedDay.padStart(2, '0')}`;
+        runSearch({date});
+      }
+    }, [effectivePetCode, searchMode, keyword, selectedYear, selectedMonth, selectedDay]),
+  );
 
-  // 선택된 날짜 조합
+  const onKeywordChange = (text: string) => {
+    setKeyword(text);
+    if (!effectivePetCode) return;
+    const trimmed = text.trim();
+    if (trimmed.length === 0) {
+      setSearchResults([]);
+      setLastSearched(null);
+      return;
+    }
+    setLoading(true);
+    keywordDebounce(text, effectivePetCode);
+  };
+
   const selectedDate = useMemo(() => {
     if (selectedYear && selectedMonth && selectedDay) {
-      const monthStr = selectedMonth.padStart(2, '0');
-      const dayStr = selectedDay.padStart(2, '0');
-      return `${selectedYear}-${monthStr}-${dayStr}`;
+      return `${selectedYear}-${selectedMonth.padStart(2, '0')}-${selectedDay.padStart(2, '0')}`;
     }
     return '';
   }, [selectedYear, selectedMonth, selectedDay]);
 
-  // 검색 결과 필터링
-  const searchResults = useMemo(() => {
-    if (searchMode === 'keyword') {
-      if (!keyword.trim()) return [];
-      const lowerKeyword = keyword.toLowerCase();
-      return allDiaries.filter(
-        diary =>
-          diary.title.toLowerCase().includes(lowerKeyword) ||
-          diary.content.toLowerCase().includes(lowerKeyword),
-      );
-    } else {
-      // 날짜 검색
-      if (!selectedDate) return [];
-      return allDiaries.filter(diary => diary.date === selectedDate);
-    }
-  }, [searchMode, keyword, selectedDate, allDiaries]);
+  const availableYears = useMemo(() => {
+    const arr: string[] = [];
+    for (let y = CURRENT_YEAR + 1; y >= CURRENT_YEAR - YEAR_RANGE; y--) arr.push(String(y));
+    return arr;
+  }, []);
+
+  const availableMonths = useMemo(() => Array.from({length: 12}, (_, i) => String(i + 1)), []);
+
+  const availableDays = useMemo(() => {
+    if (!selectedYear || !selectedMonth) return [];
+    const y = parseInt(selectedYear, 10);
+    const m = parseInt(selectedMonth, 10);
+    const last = new Date(y, m, 0).getDate();
+    return Array.from({length: last}, (_, i) => String(i + 1));
+  }, [selectedYear, selectedMonth]);
+
+  const triggerDateSearch = useCallback(() => {
+    if (selectedDate && effectivePetCode) runSearch({date: selectedDate});
+  }, [selectedDate, effectivePetCode, runSearch]);
 
   // 날짜 포맷팅
   const formatDate = (dateStr: string) => {
@@ -324,17 +222,6 @@ export function DiarySearchScreen() {
     if (diff < 7) return `${diff}일 전`;
 
     return `${date.getMonth() + 1}월 ${date.getDate()}일`;
-  };
-
-  // 금액 포맷팅
-  const formatAmount = (amount: string) => {
-    return parseInt(amount).toLocaleString('ko-KR');
-  };
-
-  // 총 지출 금액 계산
-  const getTotalExpense = (expenses?: ExpenseItem[]) => {
-    if (!expenses || expenses.length === 0) return 0;
-    return expenses.reduce((sum, exp) => sum + parseInt(exp.amount), 0);
   };
 
   // 일기 상세 보기
@@ -357,97 +244,78 @@ export function DiarySearchScreen() {
     setIsMonthPickerVisible(false);
   };
 
-  // 일 선택 핸들러
+  // 일 선택 핸들러 (선택 완료 시 자동 검색)
   const handleDaySelect = (day: string) => {
     setSelectedDay(day);
     setIsDayPickerVisible(false);
+    if (effectivePetCode && selectedYear && selectedMonth) {
+      const date = `${selectedYear}-${selectedMonth.padStart(2, '0')}-${day.padStart(2, '0')}`;
+      runSearch({date});
+    }
   };
 
   // 일기 항목 렌더링
-  const renderDiaryItem = ({item}: {item: DiaryEntry}) => {
-    const totalExpense = getTotalExpense(item.expenses);
-
-    return (
-      <TouchableOpacity
-        style={styles.diaryCard}
-        activeOpacity={0.85}
-        onPress={() => handleViewDiary(item)}>
-        {/* 카드 헤더 */}
-        <View style={styles.diaryCardHeader}>
-          <View style={styles.diaryDateContainer}>
-            <Text style={styles.diaryDate}>{formatDate(item.date)}</Text>
-            <View style={styles.diaryIcons}>
-              <MoodIcon mood={item.mood} />
-              <WeatherIcon weather={item.weather} />
-            </View>
+  const renderDiaryItem = ({item}: {item: DiaryEntry}) => (
+    <TouchableOpacity
+      style={styles.diaryCard}
+      activeOpacity={0.85}
+      onPress={() => handleViewDiary(item)}>
+      <View style={styles.diaryCardHeader}>
+        <View style={styles.diaryDateContainer}>
+          <Text style={styles.diaryDate}>{formatDate(item.date)}</Text>
+          <View style={styles.diaryIcons}>
+            <MoodIcon mood={item.mood} />
+            <WeatherIcon weather={item.weather} />
           </View>
-          <ChevronRight size={18} color="#CCCCCC" />
         </View>
-
-        {/* 제목 */}
-        <Text style={styles.diaryTitle} numberOfLines={1}>
-          {item.title}
-        </Text>
-
-        {/* 내용 */}
-        <Text style={styles.diaryContent} numberOfLines={2}>
-          {item.content}
-        </Text>
-
-        {/* 사진 미리보기 (있는 경우) */}
-        {item.photos.length > 0 && (
-          <View style={styles.photosPreview}>
-            {item.photos.slice(0, 3).map((photo, index) => (
-              <View key={index} style={styles.photoThumbnailContainer}>
-                <Image
-                  source={{uri: photo}}
-                  style={styles.photoThumbnail}
-                  resizeMode="cover"
-                />
-                {index === 2 && item.photos.length > 3 && (
-                  <View style={styles.morePhotosOverlay}>
-                    <Text style={styles.morePhotosText}>+{item.photos.length - 3}</Text>
-                  </View>
-                )}
-              </View>
-            ))}
-            <View style={styles.photoCountBadge}>
-              <Camera size={12} color="#666666" />
-              <Text style={styles.photoCountText}>{item.photos.length}</Text>
+        <ChevronRight size={18} color="#CCCCCC" />
+      </View>
+      <Text style={styles.diaryTitle} numberOfLines={1}>
+        {item.title}
+      </Text>
+      <Text style={styles.diaryContent} numberOfLines={2}>
+        {item.content}
+      </Text>
+      {item.photos.length > 0 && (
+        <View style={styles.photosPreview}>
+          {item.photos.slice(0, 3).map((photo, index) => (
+            <View key={index} style={styles.photoThumbnailContainer}>
+              <Image
+                source={{uri: photo}}
+                style={styles.photoThumbnail}
+                resizeMode="cover"
+              />
+              {index === 2 && item.photos.length > 3 && (
+                <View style={styles.morePhotosOverlay}>
+                  <Text style={styles.morePhotosText}>+{item.photos.length - 3}</Text>
+                </View>
+              )}
             </View>
+          ))}
+          <View style={styles.photoCountBadge}>
+            <Camera size={12} color="#666666" />
+            <Text style={styles.photoCountText}>{item.photos.length}</Text>
           </View>
-        )}
-
-        {/* 활동 태그 */}
-        {item.activities.length > 0 && (
-          <View style={styles.activitiesContainer}>
-            {item.activities.slice(0, 3).map((activity, index) => (
-              <View
-                key={index}
-                style={[styles.activityTag, {backgroundColor: '#F5F5F5'}]}>
-                <Text style={[styles.activityTagText, {color: '#666666'}]}>
-                  {activity}
-                </Text>
-              </View>
-            ))}
-            {item.activities.length > 3 && (
-              <Text style={styles.moreActivities}>+{item.activities.length - 3}</Text>
-            )}
-          </View>
-        )}
-
-        {/* 총 지출 금액 */}
-        {totalExpense > 0 && (
-          <View style={styles.expenseBadge}>
-            <DollarSign size={14} color="#f0663f" />
-            <Text style={styles.expenseBadgeText}>
-              총 {formatAmount(totalExpense.toString())}원
-            </Text>
-          </View>
-        )}
-      </TouchableOpacity>
-    );
-  };
+        </View>
+      )}
+      {item.activities.length > 0 && (
+        <View style={styles.activitiesContainer}>
+          {item.activities.slice(0, 3).map((activity, index) => (
+            <View
+              key={index}
+              style={[styles.activityTag, {backgroundColor: '#F5F5F5'}]}>
+              <Text style={[styles.activityTagText, {color: '#666666'}]}>
+                {activity}
+              </Text>
+            </View>
+          ))}
+          {item.activities.length > 3 && (
+            <Text style={styles.moreActivities}>+{item.activities.length - 3}</Text>
+          )}
+        </View>
+      )}
+    </TouchableOpacity>
+  );
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -517,10 +385,10 @@ export function DiarySearchScreen() {
               <Search size={20} color="#9CA3AF" />
               <TextInput
                 style={styles.searchInput}
-                placeholder="제목이나 내용으로 검색..."
+                placeholder="제목·내용 검색"
                 placeholderTextColor="#9CA3AF"
                 value={keyword}
-                onChangeText={setKeyword}
+                onChangeText={onKeywordChange}
                 autoCapitalize="none"
               />
               {keyword.length > 0 && (
@@ -607,6 +475,17 @@ export function DiarySearchScreen() {
                 </TouchableOpacity>
               </View>
             </View>
+            {selectedDate ? (
+              <TouchableOpacity
+                style={styles.dateSearchButton}
+                onPress={triggerDateSearch}
+                activeOpacity={0.8}
+                disabled={loading}>
+                <Text style={styles.dateSearchButtonText}>
+                  {loading ? '검색 중...' : '이 날짜로 검색'}
+                </Text>
+              </TouchableOpacity>
+            ) : null}
           </View>
         )}
 
@@ -783,10 +662,20 @@ export function DiarySearchScreen() {
         {((searchMode === 'keyword' && keyword.trim()) ||
           (searchMode === 'date' && selectedYear && selectedMonth && selectedDay)) && (
           <View style={styles.resultsSection}>
+            {error ? (
+              <View style={styles.errorBanner}>
+                <Text style={styles.errorBannerText}>{error}</Text>
+              </View>
+            ) : null}
             <Text style={styles.resultsTitle}>
-              검색 결과 ({searchResults.length}개)
+              검색 결과 {loading ? '' : `(${searchResults.length}개)`}
             </Text>
-            {searchResults.length === 0 ? (
+            {loading ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color="#f0663f" />
+                <Text style={styles.loadingText}>검색 중...</Text>
+              </View>
+            ) : searchResults.length === 0 ? (
               <View style={styles.emptyResults}>
                 <Text style={styles.emptyResultsText}>
                   {searchMode === 'keyword'
@@ -794,7 +683,9 @@ export function DiarySearchScreen() {
                     : '해당 날짜에 작성된 일기가 없어요'}
                 </Text>
                 <Text style={styles.emptyResultsSubtext}>
-                  다른 키워드나 날짜로 검색해보세요
+                  {searchMode === 'keyword'
+                    ? '검색어를 입력해주세요.'
+                    : '다른 날짜로 검색해보세요'}
                 </Text>
               </View>
             ) : (
@@ -823,7 +714,7 @@ export function DiarySearchScreen() {
             </Text>
             <Text style={styles.placeholderSubtitle}>
               {searchMode === 'keyword'
-                ? '제목이나 내용에 포함된 단어를 입력하면 관련 일기를 찾아드려요'
+                ? '제목·내용으로 검색해보세요. 자음만 입력해도 돼요 (예: ㄱㅅ → 간식, 강아지)'
                 : '특정 날짜에 작성한 일기를 찾을 수 있어요'}
             </Text>
           </View>
@@ -976,6 +867,19 @@ const styles = StyleSheet.create({
   dateSelectButtonTextDisabled: {
     color: '#CCCCCC',
   },
+  dateSearchButton: {
+    marginTop: 16,
+    backgroundColor: '#f0663f',
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dateSearchButtonText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: 'white',
+  },
   // 날짜 선택 모달
   modalOverlay: {
     flex: 1,
@@ -1073,6 +977,27 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#111111',
     marginBottom: 12,
+  },
+  errorBanner: {
+    backgroundColor: '#FEE2E2',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+  },
+  errorBannerText: {
+    fontSize: 14,
+    color: '#B91C1C',
+    fontWeight: '500',
+  },
+  loadingContainer: {
+    paddingVertical: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+  },
+  loadingText: {
+    fontSize: 14,
+    color: '#666666',
   },
   emptyResults: {
     padding: 40,

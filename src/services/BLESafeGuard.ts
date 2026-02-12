@@ -1,5 +1,5 @@
-import {AppState, AppStateStatus, Platform} from 'react-native';
-import BleManager from 'react-native-ble-manager';
+import {AppState, AppStateStatus} from 'react-native';
+import {BleManager, State} from 'react-native-ble-plx';
 
 /**
  * BLE 안전 가드
@@ -63,20 +63,15 @@ export class BLESafeGuard {
   }
 
   /**
-   * BLE 작업 전 필수 체크 (비동기, BLE 상태 포함)
+   * BLE 작업 전 필수 체크 (비동기, BLE 상태 포함). manager: ble-plx 인스턴스.
    */
-  static async canPerformBLEOperationAsync(operation: 'scan' | 'connect' | 'notify'): Promise<{
-    allowed: boolean;
-    reason?: string;
-  }> {
-    // 동기 체크 먼저
+  static async canPerformBLEOperationAsync(
+    operation: 'scan' | 'connect' | 'notify',
+    manager?: BleManager | null,
+  ): Promise<{allowed: boolean; reason?: string}> {
     const syncCheck = this.canPerformBLEOperation(operation);
-    if (!syncCheck.allowed) {
-      return syncCheck;
-    }
-
-    // 비동기 BLE 상태 체크
-    return this.checkBLEStateAsync();
+    if (!syncCheck.allowed) return syncCheck;
+    return this.checkBLEStateAsync(manager);
   }
 
   /**
@@ -89,33 +84,21 @@ export class BLESafeGuard {
   }
 
   /**
-   * BLE 상태 확인 (비동기)
+   * BLE 상태 확인 (비동기) - manager가 있으면 react-native-ble-plx state 사용
    */
-  private static async checkBLEStateAsync(): Promise<{allowed: boolean; reason?: string}> {
+  private static async checkBLEStateAsync(manager?: BleManager | null): Promise<{allowed: boolean; reason?: string}> {
+    if (!manager) return {allowed: true};
     try {
-      const state = await BleManager.checkState();
-      
-      if (state === 'off') {
-        return {
-          allowed: false,
-          reason: '블루투스가 꺼져있습니다.',
-        };
+      const state = await manager.state();
+      if (state === State.PoweredOff) {
+        return {allowed: false, reason: '블루투스가 꺼져있습니다.'};
       }
-
-      if (state === 'unauthorized') {
-        return {
-          allowed: false,
-          reason: '블루투스 권한이 없습니다.',
-        };
+      if (state === State.Unauthorized) {
+        return {allowed: false, reason: '블루투스 권한이 없습니다.'};
       }
-
-      if (state !== 'on') {
-        return {
-          allowed: false,
-          reason: `블루투스 상태가 올바르지 않습니다. (현재: ${state})`,
-        };
+      if (state !== State.PoweredOn) {
+        return {allowed: false, reason: `블루투스 상태가 올바르지 않습니다. (현재: ${state})`};
       }
-
       return {allowed: true};
     } catch (error) {
       return {
@@ -126,10 +109,10 @@ export class BLESafeGuard {
   }
 
   /**
-   * 스캔 시작 가드
+   * 스캔 시작 가드 (manager: ble-plx 인스턴스)
    */
-  static async guardScan<T>(operation: () => Promise<T>): Promise<T> {
-    const check = await this.canPerformBLEOperationAsync('scan');
+  static async guardScan<T>(manager: BleManager | null | undefined, operation: () => Promise<T>): Promise<T> {
+    const check = await this.canPerformBLEOperationAsync('scan', manager ?? null);
     if (!check.allowed) {
       throw new Error(check.reason);
     }
@@ -168,18 +151,18 @@ export class BLESafeGuard {
   }
 
   /**
-   * 알림 시작 가드
+   * 알림 시작 가드 (manager: ble-plx 인스턴스)
+   * BLE 상태(PoweredOn 등) 비동기 검사 포함
    */
-  static async guardNotify<T>(deviceId: string, operation: () => Promise<T>): Promise<T> {
-    const check = await this.canPerformBLEOperation('notify');
+  static async guardNotify<T>(manager: BleManager | null | undefined, deviceId: string, operation: () => Promise<T>): Promise<T> {
+    const check = await this.canPerformBLEOperationAsync('notify', manager ?? null);
     if (!check.allowed) {
-      throw new Error(check.reason);
+      throw new Error(check.reason ?? '알림을 시작할 수 없습니다.');
     }
 
-    // 연결 상태 확인 (Android)
-    if (Platform.OS === 'android') {
+    if (manager) {
       try {
-        const isConnected = await BleManager.isPeripheralConnected(deviceId, []);
+        const isConnected = await manager.isDeviceConnected(deviceId);
         if (!isConnected) {
           throw new Error('디바이스가 연결되지 않았습니다.');
         }
