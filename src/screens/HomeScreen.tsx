@@ -359,52 +359,6 @@ export function HomeScreen({
         refreshControl={
           <RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} />
         }>
-        {/* Header */}
-        <View style={styles.header}>
-          <View style={styles.headerTop}>
-            <Text style={styles.headerTitle}>{userName}님</Text>
-            <TouchableOpacity style={styles.notificationButton}>
-              <Bell size={20} color="#666666" />
-              <View style={styles.notificationBadge} />
-            </TouchableOpacity>
-          </View>
-          {/* 날씨 정보 (클릭 가능) */}
-          <TouchableOpacity
-            style={styles.weatherHeaderSection}
-            activeOpacity={0.7}
-            onPress={() => setIsWeatherExpanded(!isWeatherExpanded)}>
-            <View style={styles.weatherHeaderContent}>
-              <View style={styles.weatherIconContainer}>
-                <Cloud size={16} color="#2E8B7E" />
-              </View>
-              <View style={styles.weatherHeaderTextWrapper}>
-                {!isWeatherExpanded ? (
-                  <View style={styles.weatherHeaderTextContainer}>
-                    <Text style={styles.weatherHeaderText}>{weatherInfo.summary}</Text>
-                    <Text style={styles.weatherHeaderHint}>탭하여 자세히 보기</Text>
-                  </View>
-                ) : (
-                  <View style={styles.weatherHeaderDetails}>
-                    <Text style={styles.weatherHeaderDetailText}>
-                      온도 {weatherInfo.temperature}°C • 습도 {weatherInfo.humidity}% • 풍속 {weatherInfo.windSpeed}m/s
-                    </Text>
-                    <Text style={styles.weatherHeaderDetailText}>
-                      PM10: {weatherInfo.pm10} / PM2.5: {weatherInfo.pm25}
-                    </Text>
-                  </View>
-                )}
-              </View>
-              <View style={styles.weatherChevronContainer}>
-                {isWeatherExpanded ? (
-                  <ChevronUp size={20} color="#2E8B7E" strokeWidth={3.2} />
-                ) : (
-                  <ChevronDown size={20} color="#2E8B7E" strokeWidth={3.2} />
-                )}
-              </View>
-            </View>
-          </TouchableOpacity>
-        </View>
-
         {/* 반려동물 프로필 영역 (슬라이드 가능) */}
         <View style={styles.petProfileSection}>
           <FlatList
@@ -795,6 +749,44 @@ export function HomeScreen({
             </TouchableOpacity>
           </View>
         </View>
+
+        {/* 날씨 정보 (가장 아래) */}
+        <View style={styles.weatherSection}>
+          <TouchableOpacity
+            style={styles.weatherHeaderSection}
+            activeOpacity={0.7}
+            onPress={() => setIsWeatherExpanded(!isWeatherExpanded)}>
+            <View style={styles.weatherHeaderContent}>
+              <View style={styles.weatherIconContainer}>
+                <Cloud size={16} color="#2E8B7E" />
+              </View>
+              <View style={styles.weatherHeaderTextWrapper}>
+                {!isWeatherExpanded ? (
+                  <View style={styles.weatherHeaderTextContainer}>
+                    <Text style={styles.weatherHeaderText}>{weatherInfo.summary}</Text>
+                    <Text style={styles.weatherHeaderHint}>탭하여 자세히 보기</Text>
+                  </View>
+                ) : (
+                  <View style={styles.weatherHeaderDetails}>
+                    <Text style={styles.weatherHeaderDetailText}>
+                      온도 {weatherInfo.temperature}°C • 습도 {weatherInfo.humidity}% • 풍속 {weatherInfo.windSpeed}m/s
+                    </Text>
+                    <Text style={styles.weatherHeaderDetailText}>
+                      PM10: {weatherInfo.pm10} / PM2.5: {weatherInfo.pm25}
+                    </Text>
+                  </View>
+                )}
+              </View>
+              <View style={styles.weatherChevronContainer}>
+                {isWeatherExpanded ? (
+                  <ChevronUp size={20} color="#2E8B7E" strokeWidth={3.2} />
+                ) : (
+                  <ChevronDown size={20} color="#2E8B7E" strokeWidth={3.2} />
+                )}
+              </View>
+            </View>
+          </TouchableOpacity>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -890,16 +882,26 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     backgroundColor: '#F03F3F',
   },
+  // 날씨 섹션 (하단)
+  weatherSection: {
+    paddingHorizontal: 16,
+    marginTop: 24,
+    marginBottom: 16,
+  },
   // 헤더 날씨 섹션
   weatherHeaderSection: {
-    marginTop: 12,
-    paddingTop: 12,
-    paddingBottom: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#F0F0F0',
-    borderRadius: 8,
-    paddingHorizontal: 4,
-    marginHorizontal: -4,
+    backgroundColor: 'white',
+    paddingTop: 16,
+    paddingBottom: 16,
+    paddingHorizontal: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E8ECF0',
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 1},
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
     minHeight: 60, // 고정 높이로 레이아웃 시프트 방지
   },
   weatherHeaderContent: {
