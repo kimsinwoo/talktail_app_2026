@@ -3,7 +3,9 @@
  */
 export const getApiBaseUrl = (): string => {
   // return 'http://172.20.10.2:5000/api';
-  return 'http://192.168.0.23:5000/api';
+  // return 'http://192.168.0.23:5000/api';
+  // return 'http://192.168.0.2:5000/api';
+  return 'http://192.168.0.13:5000/api';
 };
 
 // ApiService(axios)의 baseURL로 사용
@@ -11,7 +13,9 @@ export const API_URL = getApiBaseUrl();
 
 // fetch 기반 서비스가 필요하면 사용 (현재는 사용처 최소화)
 // export const getBackendBaseUrl = (): string => 'https://creamoff.o-r.kr';
-export const getBackendBaseUrl = (): string => 'http://192.168.0.23:5000/api';
+// export const getBackendBaseUrl = (): string => 'http://192.168.0.23:5000/api';
+// export const getBackendBaseUrl = (): string => 'http://192.168.0.2:5000';
+export const getBackendBaseUrl = (): string => 'http://192.168.0.13:5000';
 // export const getBackendBaseUrl = (): string => 'http://172.20.10.2:5000/api';
 
 // 호환용(기존 코드에서 참조할 수 있어 유지)
@@ -19,10 +23,14 @@ export const BACKEND_API_URL = getBackendBaseUrl();
 
 // ✅ Socket.IO 서버 주소
 // export const SOCKET_IO_URL = 'https://creamoff.o-r.kr';
-export const SOCKET_IO_URL = 'http://192.168.0.23:5000/api';
+// export const SOCKET_IO_URL = 'http://192.168.0.23:5000';
+// export const SOCKET_IO_URL = 'http://192.168.0.2:5000';
+export const SOCKET_IO_URL = 'http://192.168.0.13:5000';
 // export const SOCKET_IO_URL = 'http://172.20.10.2:5000/api';
 
 // ✅ MQTT Broker (WebSocket)
 // - 웹(front)에서 MQTT over WebSocket을 쓰는 것과 동일한 방식으로 앱에서도 직접 구독 가능
-export const MQTT_BROKER_WS_URL = 'ws://192.168.0.23:9001';
+// export const MQTT_BROKER_WS_URL = 'ws://192.168.0.23:9001';
+// export const MQTT_BROKER_WS_URL = 'ws://192.168.0.2:9001';
+export const MQTT_BROKER_WS_URL = 'ws://192.168.0.13:9001';
 // export const MQTT_BROKER_WS_URL = 'ws://172.20.10.2:9001';

@@ -36,15 +36,27 @@ class ApiService {
       },
     );
 
-    // 응답 인터셉터: 에러 처리
+    // 응답 인터셉터: 에러 처리 (프론트 오류는 콘솔에 출력)
     this.api.interceptors.response.use(
       response => response,
       async error => {
+        const status = error.response?.status;
+        const url = error.config?.url ?? error.config?.baseURL ?? '';
+        const method = error.config?.method?.toUpperCase() ?? '?';
+        const msg = error.response?.data?.message ?? error.message;
+        console.error(
+          `[ApiService] ❌ ${method} ${url}`,
+          status != null ? `→ ${status}` : '',
+          msg || error.response?.data,
+          error.response?.data ?? error,
+        );
         if (error.response?.status === 401) {
           const requestUrl = error.config?.url ?? '';
           // ✅ 로그인 요청 실패 시에는 토큰 삭제/로그아웃 처리하지 않음 (로그인 실패 ≠ 토큰 만료)
           const isLoginRequest = typeof requestUrl === 'string' && requestUrl.includes('/auth/login');
-          if (isLoginRequest) {
+          // ✅ 건강 질문 도우미 401은 AI/Vertex 쪽 오류일 수 있으므로 로그아웃하지 않음
+          const isHealthChat = typeof requestUrl === 'string' && requestUrl.includes('health-chat');
+          if (isLoginRequest || isHealthChat) {
             return Promise.reject(error);
           }
           // 토큰 만료 등의 경우 처리
@@ -104,6 +116,12 @@ class ApiService {
   // PUT 요청
   async put<T>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T> {
     const response = await this.api.put<T>(url, data, config);
+    return response.data;
+  }
+
+  // PATCH 요청
+  async patch<T>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T> {
+    const response = await this.api.patch<T>(url, data, config);
     return response.data;
   }
 

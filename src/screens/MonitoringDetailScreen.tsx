@@ -15,8 +15,13 @@ import {userStore} from '../store/userStore';
 import {hubSocketService} from '../services/HubSocketService';
 import {hubStatusStore} from '../store/hubStatusStore';
 import {useBLE} from '../services/BLEContext';
+import {bleService} from '../services/BLEService';
 import {DeviceSetupFlowScreen} from './DeviceSetupFlowScreen';
 import {apiService} from '../services/ApiService';
+import Toast from 'react-native-toast-message';
+import {ActivityIndicator} from 'react-native';
+import {getHRDisplayLabel, getDisplayHR} from '../types/telemetry';
+import {Play} from 'lucide-react-native';
 
 type RootStackParamList = {
   MonitoringDetail: {
@@ -49,8 +54,9 @@ function MonitoringChartScreen({
   petName: string;
 }) {
   const navigation = useNavigation();
-  const {state} = useBLE();
-  
+  const {state, dispatch: bleDispatch} = useBLE();
+  const [measurementLoading, setMeasurementLoading] = useState(false);
+
   const [chartData, setChartData] = useState<{
     hr: ChartDataPoint[];
     spo2: ChartDataPoint[];
@@ -69,9 +75,10 @@ function MonitoringChartScreen({
   const isHubConnected = Object.values(connectedDevicesByHub).some(
     devices => devices?.includes(deviceMac)
   );
-  const isBleConnected = state.isConnected && state.deviceId === deviceMac;
+  const isBleConnected =
+    state.connectedDeviceIds?.includes(deviceMac) ?? (state.isConnected && state.deviceId === deviceMac);
   const connectionType = isHubConnected ? 'hub' : isBleConnected ? 'ble' : 'none';
-  
+
   // ✅ 더미 데이터 생성 (실제 데이터가 없을 때)
   useEffect(() => {
     // 더미 데이터: 최근 1시간 동안의 데이터 (5분 간격)
@@ -106,6 +113,34 @@ function MonitoringChartScreen({
     setChartData(dummyData);
   }, []);
   
+  // ✅ BLE 연결 시 Context 실시간 값 → 차트/숫자 반영 (다중 디바이스: dataByDevice[deviceMac] 우선)
+  useEffect(() => {
+    if (connectionType !== 'ble') return;
+    const deviceData = state.dataByDevice?.[deviceMac];
+    const hr = deviceData?.hr ?? state.currentHR ?? null;
+    const spo2 = deviceData?.spo2 ?? state.currentSpO2 ?? null;
+    const temp = deviceData?.temp ?? state.currentTemp?.value ?? null;
+    const battery = deviceData?.battery ?? state.currentBattery ?? null;
+    if (hr === null && spo2 === null && temp === null && battery === null) return;
+    const now = Date.now();
+    setChartData(prev => {
+      let next = { ...prev };
+      if (hr !== null && hr >= 0) {
+        next = { ...next, hr: [...prev.hr.slice(-59), { timestamp: now, value: hr }] };
+      }
+      if (spo2 !== null && spo2 >= 0) {
+        next = { ...next, spo2: [...prev.spo2.slice(-59), { timestamp: now, value: spo2 }] };
+      }
+      if (temp !== null && temp >= 0) {
+        next = { ...next, temp: [...prev.temp.slice(-59), { timestamp: now, value: temp }] };
+      }
+      if (battery !== null && battery >= 0) {
+        next = { ...next, battery: [...prev.battery.slice(-59), { timestamp: now, value: battery }] };
+      }
+      return next;
+    });
+  }, [connectionType, deviceMac, state.dataByDevice, state.currentHR, state.currentSpO2, state.currentTemp?.value, state.currentBattery]);
+
   // ✅ Hub 소켓 구독 (실제 데이터 수신)
   useEffect(() => {
     const offTelemetry = hubSocketService.on('TELEMETRY', (payload: any) => {
@@ -255,7 +290,29 @@ function MonitoringChartScreen({
     const battery = chartData.battery[chartData.battery.length - 1]?.value ?? 0;
     return {hr, spo2, temp, battery};
   }, [chartData]);
-  
+
+  const handleStartMeasurement = async () => {
+    const isThisMeasuring = state.measuringDeviceIds?.includes(deviceMac) ?? state.isMeasuring;
+    if (connectionType !== 'ble' || !deviceMac || isThisMeasuring || measurementLoading) return;
+    setMeasurementLoading(true);
+    try {
+      await bleService.startMeasurement(deviceMac);
+      Toast.show({
+        type: 'success',
+        text1: '측정 시작',
+        text2: '심박·산소포화도·체온 데이터를 수집합니다.',
+      });
+    } catch (e: any) {
+      Toast.show({
+        type: 'error',
+        text1: '측정 시작 실패',
+        text2: e?.message || '디바이스 연결을 확인한 뒤 다시 시도해 주세요.',
+      });
+    } finally {
+      setMeasurementLoading(false);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       {/* Header */}
@@ -285,7 +342,8 @@ function MonitoringChartScreen({
                 <Heart size={20} color="#F03F3F" />
                 <Text style={styles.summaryLabel}>심박수</Text>
                 <Text style={styles.summaryValue}>
-                  {currentData.hr > 0 ? Math.round(currentData.hr) : '--'}
+                  {getHRDisplayLabel(currentData.hr) ??
+                    (getDisplayHR(currentData.hr) != null ? Math.round(getDisplayHR(currentData.hr)!) : '--')}
                 </Text>
                 <Text style={styles.summaryUnit}>BPM</Text>
               </View>
@@ -293,7 +351,7 @@ function MonitoringChartScreen({
                 <Droplet size={20} color="#2E8B7E" />
                 <Text style={styles.summaryLabel}>SpO2</Text>
                 <Text style={styles.summaryValue}>
-                  {currentData.spo2 > 0 ? Math.round(currentData.spo2) : '--'}
+                  {typeof currentData.spo2 === 'number' && currentData.spo2 >= 0 ? Math.round(currentData.spo2) : '--'}
                 </Text>
                 <Text style={styles.summaryUnit}>%</Text>
               </View>
@@ -301,7 +359,7 @@ function MonitoringChartScreen({
                 <Thermometer size={20} color="#FFB02E" />
                 <Text style={styles.summaryLabel}>체온</Text>
                 <Text style={styles.summaryValue}>
-                  {currentData.temp > 0 ? currentData.temp.toFixed(1) : '--'}
+                  {typeof currentData.temp === 'number' && currentData.temp >= 0 ? currentData.temp.toFixed(1) : '--'}
                 </Text>
                 <Text style={styles.summaryUnit}>°C</Text>
               </View>
@@ -309,7 +367,7 @@ function MonitoringChartScreen({
                 <Battery size={20} color="#4F46E5" />
                 <Text style={styles.summaryLabel}>배터리</Text>
                 <Text style={styles.summaryValue}>
-                  {currentData.battery > 0 ? Math.round(currentData.battery) : '--'}
+                  {typeof currentData.battery === 'number' && currentData.battery >= 0 ? Math.round(currentData.battery) : '--'}
                 </Text>
                 <Text style={styles.summaryUnit}>%</Text>
               </View>
@@ -329,8 +387,27 @@ function MonitoringChartScreen({
         <View style={styles.section}>
           {renderChart(chartData.temp, '#FFB02E', '체온', '°C', 36, 40)}
         </View>
-        
       </ScrollView>
+
+      {/* BLE 연결 시 측정 시작 버튼 */}
+      {connectionType === 'ble' && isBleConnected && (
+        <View style={styles.measureButtonWrap}>
+          <TouchableOpacity
+            style={[styles.measureButton, ((state.measuringDeviceIds?.includes(deviceMac) ?? state.isMeasuring) || measurementLoading) && styles.measureButtonDisabled]}
+            onPress={handleStartMeasurement}
+            disabled={(state.measuringDeviceIds?.includes(deviceMac) ?? state.isMeasuring) || measurementLoading}
+            activeOpacity={0.85}>
+            {measurementLoading ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Play size={20} color="#fff" />
+            )}
+            <Text style={styles.measureButtonText}>
+              {(state.measuringDeviceIds?.includes(deviceMac) ?? state.isMeasuring) ? '측정 중' : measurementLoading ? '시작 중...' : '측정 시작'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -618,19 +695,55 @@ export function MonitoringDetailScreen({}: MonitoringDetailScreenProps) {
   const checkSetupStatus = async () => {
     setIsCheckingSetup(true);
     try {
+      const params = route.params || {};
+      const paramDeviceMac = params.deviceMac;
+      const paramPetCode = params.petCode;
+
       // 최신 펫 정보 가져오기
       await userStore.getState().fetchPets();
       await hubStatusStore.getState().refreshHubs();
-      
+
       const currentPets = userStore.getState().pets;
       const hubs = hubStatusStore.getState().hubs;
-      
+
+      // ✅ 모니터링 개요에서 "디바이스 연결된 반려동물" 탭으로 진입한 경우: 해당 디바이스가 BLE면 허브 없이 디테일로 바로 진입
+      if (paramDeviceMac && paramPetCode) {
+        try {
+          const deviceRes = await apiService.get<{success: boolean; data: any[]}>('/device');
+          const devices = (deviceRes as any)?.data || [];
+          const device = devices.find(
+            (d: any) =>
+              String(d?.address).toLowerCase() === String(paramDeviceMac).toLowerCase()
+          );
+          const isBleDevice =
+            device &&
+            (device.hub_address == null ||
+              String(device.hub_address || '').trim() === '');
+          const paramMacLower = String(paramDeviceMac).toLowerCase();
+          const petHasThisDevice = currentPets.some(
+            p =>
+              p.pet_code === paramPetCode &&
+              String(p.device_address || '').toLowerCase() === paramMacLower
+          );
+          if (isBleDevice && petHasThisDevice) {
+            console.log('[MonitoringDetailScreen] BLE 디바이스 연결 펫 진입 → 디테일 바로 표시');
+            setIsSetupComplete(true);
+            setShowSetupFlow(false);
+            setShowPetSelection(false);
+            setIsCheckingSetup(false);
+            return;
+          }
+        } catch {
+          // BLE 확인 실패 시 아래 허브 기준 로직으로 진행
+        }
+      }
+
       // ✅ 허브가 등록되어 있고 온라인인지 확인
       const hasOnlineHub = hubs.some(hub => {
         const status = hubStatusStore.getState().getHubStatus(hub.address);
         return status === 'online';
       });
-      
+
       // ✅ 디바이스가 등록되어 있는지 확인 (API 호출)
       let hasRegisteredDevices = false;
       try {
@@ -643,17 +756,17 @@ export function MonitoringDetailScreen({}: MonitoringDetailScreenProps) {
       } catch {
         hasRegisteredDevices = false;
       }
-      
+
       // ✅ 펫이 디바이스와 연결되어 있는지 확인
       const hasConnectedPets = currentPets.some(p => {
-        return p.device_address !== null && 
-               p.device_address !== undefined && 
+        return p.device_address !== null &&
+               p.device_address !== undefined &&
                p.device_address !== '';
       });
-      
+
       // ✅ 모든 설정이 완료되었는지 확인
       const allSetupComplete = hasOnlineHub && hasRegisteredDevices && hasConnectedPets;
-      
+
       if (allSetupComplete) {
         console.log('[MonitoringDetailScreen] 설정 완료, 펫 선택 화면 표시');
         setIsSetupComplete(true);
@@ -662,7 +775,7 @@ export function MonitoringDetailScreen({}: MonitoringDetailScreenProps) {
         setIsCheckingSetup(false);
         return;
       }
-      
+
       // 설정이 완료되지 않았으면 설정 플로우 표시
       console.log('[MonitoringDetailScreen] 설정 미완료, 설정 플로우 표시', {
         hasOnlineHub,
@@ -727,15 +840,16 @@ export function MonitoringDetailScreen({}: MonitoringDetailScreenProps) {
     return <DeviceSetupFlowScreen onComplete={handleSetupComplete} />;
   }
   
-  // ✅ 설정이 완료되었고 petCode가 route에 있으면 바로 모니터링 화면으로 이동
+  // ✅ 설정이 완료되었고 petCode가 route에 있으면 바로 모니터링 화면으로 이동 (BLE 진입 시 deviceMac은 params에서 fallback)
   if (petCode) {
     const currentPets = userStore.getState().pets;
     const routePet = currentPets.find(p => p.pet_code === petCode);
-    if (routePet && routePet.device_address) {
+    const deviceMac = routePet?.device_address || (route.params || {}).deviceMac;
+    if (routePet && deviceMac) {
       return (
         <MonitoringChartScreen
           petCode={routePet.pet_code}
-          deviceMac={routePet.device_address}
+          deviceMac={deviceMac}
           petName={routePet.name}
         />
       );
@@ -810,6 +924,31 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingBottom: 100,
+  },
+  measureButtonWrap: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    paddingBottom: 24,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+    backgroundColor: '#fff',
+  },
+  measureButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#2E8B7E',
+    paddingVertical: 14,
+    borderRadius: 12,
+  },
+  measureButtonDisabled: {
+    opacity: 0.7,
+  },
+  measureButtonText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#fff',
   },
   section: {
     paddingHorizontal: 16,

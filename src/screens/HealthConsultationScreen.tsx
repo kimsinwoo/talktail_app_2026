@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   KeyboardAvoidingView,
   Platform,
+  Animated,
 } from 'react-native';
 import {
   ChevronLeft,
@@ -29,6 +30,24 @@ interface Message {
   timestamp: Date;
 }
 
+/** 타자 효과용 깜빡이는 커서 */
+function TypewriterCursor() {
+  const opacity = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    const anim = Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, { toValue: 0, useNativeDriver: true, duration: 350 }),
+        Animated.timing(opacity, { toValue: 1, useNativeDriver: true, duration: 350 }),
+      ]),
+    );
+    anim.start();
+    return () => anim.stop();
+  }, [opacity]);
+  return (
+    <Animated.View style={[styles.typewriterCursor, { opacity }]} />
+  );
+}
+
 export function HealthConsultationScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
@@ -48,14 +67,49 @@ export function HealthConsultationScreen() {
   ]);
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [typingMessageId, setTypingMessageId] = useState<string | null>(null);
+  const [typingVisibleLength, setTypingVisibleLength] = useState(0);
   const scrollViewRef = useRef<ScrollView>(null);
+  const typingContentRef = useRef('');
+  const typingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     // 메시지가 추가될 때마다 스크롤을 맨 아래로
     setTimeout(() => {
       scrollViewRef.current?.scrollToEnd({animated: true});
     }, 100);
-  }, [messages]);
+  }, [messages, typingVisibleLength]);
+
+  // 타자 애니메이션: assistant 답변을 한 글자씩 표시
+  useEffect(() => {
+    if (!typingMessageId || typingContentRef.current.length === 0) return;
+    const fullLength = typingContentRef.current.length;
+    const charPerTick = 2; // 한 번에 2글자씩 (속도 조절)
+    const tickMs = 35;
+
+    typingIntervalRef.current = setInterval(() => {
+      setTypingVisibleLength(prev => {
+        const next = Math.min(prev + charPerTick, fullLength);
+        if (next >= fullLength) {
+          if (typingIntervalRef.current) {
+            clearInterval(typingIntervalRef.current);
+            typingIntervalRef.current = null;
+          }
+          setTypingMessageId(null);
+          typingContentRef.current = '';
+          return fullLength;
+        }
+        return next;
+      });
+    }, tickMs);
+
+    return () => {
+      if (typingIntervalRef.current) {
+        clearInterval(typingIntervalRef.current);
+        typingIntervalRef.current = null;
+      }
+    };
+  }, [typingMessageId]);
 
   const handleSend = async () => {
     if (!inputText.trim() || isLoading) return;
@@ -71,27 +125,43 @@ export function HealthConsultationScreen() {
     setInputText('');
     setIsLoading(true);
 
+    const conversation = [...messages, userMessage];
+    const messagesPayload = conversation.map(m => ({
+      type: m.type,
+      content: m.content,
+    }));
+
     try {
-      const payload = messages.concat(userMessage).map(m => ({
-        role: m.type,
-        content: m.content,
-      }));
-      const res = await apiService.postRaw<{success?: boolean; reply?: string}>(
+      const res = await apiService.postRaw<{success: boolean; message: string}>(
         '/health-chat',
-        {messages: payload},
+        {messages: messagesPayload},
       );
-      const reply = (res && typeof res === 'object' && 'reply' in res && (res as {reply?: string}).reply) || '';
+      const reply =
+        res && typeof res === 'object' && 'message' in res && typeof (res as {message: string}).message === 'string'
+          ? (res as {message: string}).message
+          : '';
+      console.log('[HealthConsultation] AI 답변:', reply);
+      const fullContent = reply || '답변을 생성하지 못했어요. 다시 질문해 주세요.';
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         type: 'assistant',
-        content: reply || '답변을 생성하지 못했어요. 다시 질문해 주세요.',
+        content: fullContent,
         timestamp: new Date(),
       };
       setMessages(prev => [...prev, assistantMessage]);
+      typingContentRef.current = fullContent;
+      setTypingVisibleLength(0);
+      setTypingMessageId(assistantMessage.id);
     } catch (e: any) {
       const msg =
         e.response?.data?.message ||
         (e.message === 'Network Error' ? '네트워크 연결을 확인해 주세요.' : '일시적인 오류가 났어요. 잠시 후 다시 시도해 주세요.');
+      console.error('[HealthConsultation] 건강 질문 도우미 요청 실패:', {
+        status: e.response?.status,
+        message: e.response?.data?.message ?? e.message,
+        url: e.config?.url ?? e.config?.baseURL,
+        fullError: e,
+      });
       Toast.show({type: 'error', text1: '답변 실패', text2: msg, position: 'bottom'});
     } finally {
       setIsLoading(false);
@@ -102,6 +172,91 @@ export function HealthConsultationScreen() {
     const hours = date.getHours();
     const minutes = date.getMinutes();
     return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+  };
+
+  /** 한 줄 텍스트 안에서 **굵은 글씨**만 파싱해 React 노드 배열로 반환 */
+  const parseBoldInLine = (line: string, baseStyle: object, boldStyle: object): React.ReactNode[] => {
+    if (!line) return [<Text key="b0" style={baseStyle}>{''}</Text>];
+    const nodes: React.ReactNode[] = [];
+    const re = /\*\*([^*]+)\*\*/g;
+    let lastEnd = 0;
+    let key = 0;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(line)) !== null) {
+      if (m.index > lastEnd) {
+        nodes.push(
+          <Text key={`b${key++}`} style={baseStyle}>
+            {line.slice(lastEnd, m.index)}
+          </Text>,
+        );
+      }
+      nodes.push(
+        <Text key={`b${key++}`} style={[baseStyle, boldStyle]}>
+          {m[1]}
+        </Text>,
+      );
+      lastEnd = m.index + m[0].length;
+    }
+    if (lastEnd < line.length) {
+      nodes.push(
+        <Text key={`b${key++}`} style={baseStyle}>
+          {line.slice(lastEnd)}
+        </Text>,
+      );
+    }
+    return nodes.length > 0 ? nodes : [<Text key="b0" style={baseStyle}>{line}</Text>];
+  };
+
+  /** AI 답변: 줄 단위 불릿·들여쓰기·굵은 글씨 적용해 가독성 최대화. showCursor 시 타자 중이면 단순 텍스트+커서만 */
+  const renderMessageContent = (content: string, isUser: boolean, showCursor?: boolean) => {
+    if (isUser) return <Text style={[styles.messageText, styles.messageTextUser]}>{content}</Text>;
+    if (showCursor) {
+      return (
+        <View style={styles.messageBlockRow}>
+          <Text style={[styles.messageText, styles.messageTextAssistant]}>{content}</Text>
+          <TypewriterCursor />
+        </View>
+      );
+    }
+    const baseStyle = StyleSheet.flatten([styles.messageText, styles.messageTextAssistant]);
+    const boldStyle = styles.messageTextBold;
+    const lines = content.replace(/\r\n/g, '\n').split('\n');
+    const lineViews: React.ReactNode[] = [];
+    const bulletMarker = /^\s*(\*|\-)\s+(.*)$/; // "* 항목" or "- 항목"
+    const bulletMarkerLoose = /^\s*\*\s+(.*)$/;   // "*   항목" (공백 여러 개)
+
+    lines.forEach((rawLine, idx) => {
+      const line = rawLine.trimEnd();
+      const key = `line-${idx}`;
+      if (line === '') {
+        lineViews.push(<View key={key} style={styles.messageLineEmpty} />);
+        return;
+      }
+      let bulletContent: string | null = null;
+      let indentLevel = 0;
+      const m = line.match(bulletMarker) || line.match(bulletMarkerLoose);
+      if (m) {
+        bulletContent = m[m.length > 2 ? 2 : 1].trimStart();
+        const leadingSpaces = (line.match(/^\s*/) || [''])[0].length;
+        indentLevel = leadingSpaces >= 6 ? 2 : leadingSpaces >= 2 ? 1 : 0;
+      }
+      if (bulletContent !== null) {
+        lineViews.push(
+          <View key={key} style={[styles.messageLine, indentLevel > 0 && { marginLeft: indentLevel * 14 }]}>
+            <Text style={[styles.messageText, styles.messageTextAssistant, styles.messageBulletDot]}>• </Text>
+            <Text style={[styles.messageText, styles.messageTextAssistant]}>{parseBoldInLine(bulletContent, baseStyle, boldStyle)}</Text>
+          </View>,
+        );
+      } else {
+        lineViews.push(
+          <View key={key} style={styles.messageLine}>
+            <Text style={[styles.messageText, styles.messageTextAssistant]}>{parseBoldInLine(line, baseStyle, boldStyle)}</Text>
+          </View>,
+        );
+      }
+    });
+
+    return <View style={styles.messageBlock}>{lineViews}</View>;
   };
 
   return (
@@ -148,13 +303,13 @@ export function HealthConsultationScreen() {
                   styles.messageBubble,
                   message.type === 'user' ? styles.messageBubbleUser : styles.messageBubbleAssistant,
                 ]}>
-                <Text
-                  style={[
-                    styles.messageText,
-                    message.type === 'user' ? styles.messageTextUser : styles.messageTextAssistant,
-                  ]}>
-                  {message.content}
-                </Text>
+                {message.type === 'assistant' && message.id === typingMessageId
+                  ? renderMessageContent(
+                      message.content.slice(0, typingVisibleLength),
+                      false,
+                      true,
+                    )
+                  : renderMessageContent(message.content, message.type === 'user', false)}
                 <Text
                   style={[
                     styles.messageTime,
@@ -334,6 +489,39 @@ const styles = StyleSheet.create({
   messageTextAssistant: {
     color: '#1A202C',
     fontWeight: '400',
+  },
+  messageTextBold: {
+    fontWeight: '700',
+    color: '#1A202C',
+  },
+  messageBlock: {
+    gap: 2,
+  },
+  messageBlockRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+  },
+  messageLine: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'flex-start',
+    marginBottom: 2,
+  },
+  messageLineEmpty: {
+    height: 8,
+    marginBottom: 2,
+  },
+  messageBulletDot: {
+    fontWeight: '600',
+    color: '#2E8B7E',
+    marginRight: 2,
+  },
+  typewriterCursor: {
+    width: 2,
+    height: 16,
+    backgroundColor: '#2E8B7E',
+    marginLeft: 2,
   },
   messageTime: {
     fontSize: 11,

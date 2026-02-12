@@ -69,6 +69,9 @@ import HealthCheckStartScreen from './src/screens/HealthCheckStartScreen';
 // import CheckoutScreen from './src/screens/CheckoutScreen';
 // import OrderCompleteScreen from './src/screens/OrderCompleteScreen';
 import { HubConsoleScreen } from './src/screens/HubConsoleScreen';
+import { HubListScreen } from './src/screens/HubListScreen';
+import { HubDeviceListScreen } from './src/screens/HubDeviceListScreen';
+import { TelemetryListScreen } from './src/screens/TelemetryListScreen';
 import { DeviceRegisterScreen } from './src/screens/DeviceRegisterScreen';
 import { HubDeviceManagementScreen } from './src/screens/HubDeviceManagementScreen';
 import { DeviceSetupFlowScreen } from './src/screens/DeviceSetupFlowScreen';
@@ -142,6 +145,9 @@ export type RootStackParamList = {
   HealthConsultation: { petCode?: string; petName?: string } | undefined;
   ImageGeneration: { petCode?: string; petName?: string } | undefined;
   Calendar: { petCode?: string; petName?: string } | undefined;
+  HubList: undefined;
+  HubDeviceList: { hubAddress: string; hubName?: string } | undefined;
+  TelemetryList: { deviceMac?: string; deviceName?: string; hubAddress?: string } | undefined;
 };
 
 const Tab = createBottomTabNavigator<TabParamList>();
@@ -667,6 +673,9 @@ function App(): React.JSX.Element {
             />
             <Stack.Screen name="PetEdit" component={PetEditScreen} />
             <Stack.Screen name="HubConsole" component={HubConsoleScreen} />
+            <Stack.Screen name="HubList" component={HubListScreen} />
+            <Stack.Screen name="HubDeviceList" component={HubDeviceListScreen} />
+            <Stack.Screen name="TelemetryList" component={TelemetryListScreen} />
             <Stack.Screen
               name="DeviceRegister"
               component={DeviceRegisterScreen}

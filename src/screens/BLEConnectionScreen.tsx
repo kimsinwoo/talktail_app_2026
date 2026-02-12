@@ -1,4 +1,4 @@
-import React, {useState, useEffect, useRef} from 'react';
+import React, {useState, useEffect, useRef, useCallback} from 'react';
 import {
   View,
   Text,
@@ -11,13 +11,15 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import {Wifi, Bluetooth, Sparkles} from 'lucide-react-native';
+import {Wifi, Bluetooth, Sparkles, Check} from 'lucide-react-native';
 import {bleService} from '../services/BLEService';
 import {useBLE} from '../services/BLEContext';
 import Toast from 'react-native-toast-message';
 import {userStore} from '../store/userStore';
 import {apiService} from '../services/ApiService';
-import {useNavigation} from '@react-navigation/native';
+import {useNavigation, useFocusEffect} from '@react-navigation/native';
+
+const BLE_DEVICE_MAX = 4;
 
 interface BLEConnectionScreenProps {
   petName?: string;
@@ -47,7 +49,35 @@ export function BLEConnectionScreen({
   const [deviceToRegister, setDeviceToRegister] = useState<{id: string; name: string} | null>(null);
   const [deviceName, setDeviceName] = useState('');
   const [isRegistering, setIsRegistering] = useState(false);
-  
+  const [bleDeviceCount, setBleDeviceCount] = useState(0);
+  const [connectingToRegister, setConnectingToRegister] = useState<string | null>(null);
+
+  const lastDeviceFetchAt = React.useRef<number>(0);
+  const DEVICE_FETCH_MIN_INTERVAL_MS = 45 * 1000;
+
+  const fetchBleDeviceCount = useCallback(async (force = false) => {
+    const now = Date.now();
+    if (!force && lastDeviceFetchAt.current > 0 && now - lastDeviceFetchAt.current < DEVICE_FETCH_MIN_INTERVAL_MS) {
+      return;
+    }
+    try {
+      const res = await apiService.get<{ success: boolean; data?: Array<{ hub_address?: string | null }> }>('/device');
+      lastDeviceFetchAt.current = Date.now();
+      const list = Array.isArray((res as any)?.data) ? (res as any).data : [];
+      const bleOnly = list.filter((d: { hub_address?: string | null }) => d.hub_address == null || d.hub_address === '');
+      setBleDeviceCount(bleOnly.length);
+    } catch {
+      setBleDeviceCount(0);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchBleDeviceCount(false);
+      return undefined;
+    }, [fetchBleDeviceCount]),
+  );
+
   // devices 상태가 변경될 때마다 ref 업데이트
   useEffect(() => {
     devicesRef.current = devices;
@@ -89,14 +119,14 @@ export function BLEConnectionScreen({
       },
       onScanStopped: () => {
         setIsScanning(false);
-        // ref를 사용하여 최신 디바이스 리스트 참조
+        bleService.setAutoConnectEnabled(true);
         const deviceCount = devicesRef.current.length;
         Toast.show({
           type: 'info',
           text1: '스캔 완료',
-          text2: deviceCount > 0 
+          text2: deviceCount > 0
             ? `${deviceCount}개의 디바이스를 찾았습니다.`
-            : '디바이스를 찾지 못했습니다.',
+            : '디바이스를 찾지 못했습니다. 주변에 Tailing 디바이스가 있는지 확인해 주세요.',
         });
       },
       onError: (error: Error) => {
@@ -106,6 +136,7 @@ export function BLEConnectionScreen({
           text2: error.message,
         });
         setIsScanning(false);
+        bleService.setAutoConnectEnabled(true);
       },
     };
     
@@ -113,34 +144,28 @@ export function BLEConnectionScreen({
   }, [petName, dispatch]);
 
   const handleScan = async () => {
-    // ✅ 더미 데이터로 UI 확인용 스캔 시뮬레이션
-    if (isScanning) {
-      console.log('이미 스캔 중입니다.');
-      return;
-    }
-    
+    if (isScanning) return;
     try {
-      setIsScanning(true);
-      setDevices([]);
-      
-      // ✅ 더미 디바이스 리스트 (2초 후 표시)
-      setTimeout(() => {
-        const dummyDevices = [
-          {id: 'd4:d5:3f:28:e1:f4', name: 'Tailing Device 1', rssi: -52},
-          {id: 'a1:b2:c3:d4:e5:f6', name: 'Tailing Device 2', rssi: -68},
-          {id: '11:22:33:44:55:66', name: 'Tailing Device 3', rssi: -75},
-        ];
-        setDevices(dummyDevices);
-        setIsScanning(false);
+      // 이미 연결된 디바이스가 있으면 먼저 연결 해제 후 스캔 (다른 디바이스 등록 가능하도록)
+      if (state.isConnected && state.deviceId) {
+        await bleService.disconnect();
+        dispatch({ type: 'SET_CONNECTED', payload: false });
+        dispatch({ type: 'SET_DEVICE_ID', payload: null });
         Toast.show({
           type: 'info',
-          text1: '스캔 완료',
-          text2: `${dummyDevices.length}개의 디바이스를 찾았습니다.`,
+          text1: '연결 해제',
+          text2: '다른 디바이스를 찾기 위해 연결을 끊었습니다.',
         });
-      }, 2000);
+        await new Promise<void>(resolve => setTimeout(() => resolve(), 600));
+      }
+      setIsScanning(true);
+      setDevices([]);
+      bleService.setAutoConnectEnabled(false);
+      await bleService.startScan(10);
     } catch (error: any) {
       console.error('스캔 에러:', error);
       setIsScanning(false);
+      bleService.setAutoConnectEnabled(true);
       Toast.show({
         type: 'error',
         text1: '스캔 오류',
@@ -149,31 +174,56 @@ export function BLEConnectionScreen({
     }
   };
 
+  /** 연결 후 이름 입력 모달 열기 → 등록까지 한 번에 */
+  const handleConfirmDevice = async (deviceId: string, displayName: string) => {
+    if (bleDeviceCount >= BLE_DEVICE_MAX) {
+      Toast.show({
+        type: 'error',
+        text1: `최대 ${BLE_DEVICE_MAX}대까지 등록 가능`,
+        text2: '다른 디바이스를 삭제한 후 추가해 주세요.',
+      });
+      return;
+    }
+    if (connectingToRegister || isRegistering) return;
+    setConnectingToRegister(deviceId);
+    try {
+      await bleService.connect(deviceId);
+      setDeviceToRegister({id: deviceId, name: displayName});
+      setDeviceName(displayName || 'Tailing Device');
+      setShowNameModal(true);
+      Toast.show({
+        type: 'success',
+        text1: '연결됨',
+        text2: '이름을 입력한 뒤 등록해 주세요.',
+      });
+    } catch (e: any) {
+      const msg = String(e?.message ?? '');
+      if (msg.includes('Operation was cancelled') || msg.includes('cancelled')) {
+        // 사용자 이동/취소 등으로 인한 정상적인 취소 → 토스트 생략
+      } else {
+        Toast.show({
+          type: 'error',
+          text1: '연결 실패',
+          text2: e?.message || '디바이스에 연결할 수 없습니다. 거리나 전원을 확인해 주세요.',
+        });
+      }
+    } finally {
+      setConnectingToRegister(null);
+    }
+  };
+
   const handleIdentify = async (deviceId: string, deviceName: string) => {
-    // ✅ 디바이스 식별하기 (MODE:D 전송)
     try {
       setIdentifyingDeviceId(deviceId);
-      
-      // ✅ 디바이스에 연결 (식별 명령 전송을 위해)
-      // 더미: 연결 시뮬레이션
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      // ✅ MODE:D 명령 전송 (더미: 시뮬레이션)
-      // 실제 구현 시: await bleService.sendIdentifyCommand(deviceId);
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
+      await new Promise<void>(resolve => setTimeout(() => resolve(), 500));
+      await new Promise<void>(resolve => setTimeout(() => resolve(), 500));
       Toast.show({
         type: 'info',
         text1: 'LED 깜빡임 시작',
         text2: '디바이스에서 삼색 LED가 깜빡입니다.',
         position: 'bottom',
       });
-      
-      // ✅ 이름 변경 모달 표시
-      setDeviceToRegister({id: deviceId, name: deviceName});
-      setDeviceName(deviceName || 'Tailing Device')
-      ;
-      setShowNameModal(true);
+      await handleConfirmDevice(deviceId, deviceName || 'Tailing Device');
       setIdentifyingDeviceId(null);
     } catch (error: any) {
       setIdentifyingDeviceId(null);
@@ -197,51 +247,54 @@ export function BLEConnectionScreen({
     try {
       setIsRegistering(true);
       
-      // ✅ 서버에 디바이스 이름 저장 (맥어드레스와 이름 매칭)
-      // hubAddress는 null (1:1 연결이므로 허브 없음)
-      const res = await apiService.post<{
-        success: boolean;
-        message: string;
-        data: {address: string; name: string; hub_address?: string};
-      }>('/device', {
-        address: deviceToRegister.id,
-        name: deviceName.trim(),
-        hubAddress: null, // 1:1 연결은 허브 없음
-      });
+      // 서버에 BLE 디바이스 등록 (hubAddress: null = BLE 전용)
+      const res = await apiService.post<{ address: string; name: string; hub_address?: string | null }>(
+        '/device',
+        {
+          address: deviceToRegister.id,
+          name: deviceName.trim(),
+          hubAddress: null,
+        },
+      );
 
-      if ((res as any)?.success) {
+      // ApiService.post는 응답의 data 필드만 반환하므로, address 존재 여부로 성공 판단
+      if (res && (res as any)?.address) {
         Toast.show({
           type: 'success',
           text1: '등록 완료',
-          text2: '디바이스가 등록되었습니다.',
+          text2: '디바이스가 서버에 등록되었습니다.',
         });
-        
-        // ✅ 등록 완료 후 메인 화면으로 이동
+        fetchBleDeviceCount();
         setTimeout(() => {
           setShowNameModal(false);
           setDeviceToRegister(null);
           setDeviceName('');
-          // DeviceManagementScreen으로 돌아가기
           if (navigation.canGoBack()) {
             navigation.goBack();
           }
         }, 1000);
       } else {
-        throw new Error((res as any)?.message || '등록에 실패했습니다.');
+        throw new Error('등록에 실패했습니다.');
       }
     } catch (e: any) {
-      // 409(이미 등록) 등은 이름 업데이트로 처리
+      if (e?.response?.status === 400 && /최대.*등록/.test(e?.response?.data?.message || '')) {
+        Toast.show({
+          type: 'error',
+          text1: '등록 불가',
+          text2: e?.response?.data?.message || `BLE 디바이스는 최대 ${BLE_DEVICE_MAX}대까지 등록 가능합니다.`,
+        });
+        setShowNameModal(false);
+        setDeviceToRegister(null);
+        setDeviceName('');
+        return;
+      }
       if (e?.response?.status === 409) {
         try {
-          const res2 = await apiService.put<{
-            success: boolean;
-            message: string;
-            data: {address: string; name: string};
-          }>(`/device/${encodeURIComponent(deviceToRegister.id)}`, {
-            name: deviceName.trim(),
-          });
-
-          if ((res2 as any)?.success) {
+          const res2 = await apiService.put<{ success?: boolean; message?: string; data?: { address: string; name: string } }>(
+            `/device/${encodeURIComponent(deviceToRegister.id)}`,
+            { name: deviceName.trim() },
+          );
+          if ((res2 as any)?.success !== false) {
             Toast.show({
               type: 'success',
               text1: '이름 변경 완료',
@@ -292,8 +345,9 @@ export function BLEConnectionScreen({
       <View style={styles.header}>
         <Text style={styles.headerTitle}>블루투스 디바이스 연결</Text>
         <Text style={styles.headerSubtitle}>
-          {petName}의 모니터링 디바이스를 연결하세요
+          {petName}의 모니터링 디바이스를 연결하세요 (최대 {BLE_DEVICE_MAX}대)
         </Text>
+        <Text style={styles.bleCountText}>등록된 BLE 디바이스: {bleDeviceCount}/{BLE_DEVICE_MAX}</Text>
       </View>
 
       <View style={styles.statusCard}>
@@ -307,8 +361,10 @@ export function BLEConnectionScreen({
       <TouchableOpacity
         style={[styles.scanButton, isScanning && styles.scanButtonActive]}
         onPress={handleScan}
-        disabled={isScanning || state.isConnected}>
-        <Text style={styles.scanButtonText}>{isScanning ? '스캔 중...' : '디바이스 찾기'}</Text>
+        disabled={isScanning}>
+        <Text style={styles.scanButtonText}>
+          {isScanning ? '스캔 중...' : state.isConnected ? '다른 디바이스 찾기' : '디바이스 찾기'}
+        </Text>
       </TouchableOpacity>
 
       {isScanning && devices.length === 0 && (
@@ -332,6 +388,22 @@ export function BLEConnectionScreen({
               </View>
               <TouchableOpacity
                 style={[
+                  styles.confirmButton,
+                  (identifyingDeviceId !== null || isRegistering || connectingToRegister !== null || bleDeviceCount >= BLE_DEVICE_MAX) && styles.confirmButtonDisabled,
+                ]}
+                onPress={() => handleConfirmDevice(device.id, device.name)}
+                disabled={identifyingDeviceId !== null || isRegistering || connectingToRegister !== null || bleDeviceCount >= BLE_DEVICE_MAX}>
+                {connectingToRegister === device.id ? (
+                  <ActivityIndicator size="small" color="white" />
+                ) : (
+                  <>
+                    <Check size={14} color="white" />
+                    <Text style={styles.confirmButtonText}>연결 후 등록</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
                   styles.identifyButton,
                   identifyingDeviceId === device.id && styles.identifyButtonActive,
                 ]}
@@ -342,7 +414,7 @@ export function BLEConnectionScreen({
                 ) : (
                   <>
                     <Sparkles size={14} color="white" />
-                    <Text style={styles.identifyButtonText}>식별하기</Text>
+                    <Text style={styles.identifyButtonText}>식별</Text>
                   </>
                 )}
               </TouchableOpacity>
@@ -365,9 +437,9 @@ export function BLEConnectionScreen({
         }}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>디바이스 이름 설정</Text>
+            <Text style={styles.modalTitle}>디바이스 등록</Text>
             <Text style={styles.modalSubtitle}>
-              LED가 깜빡이는 디바이스의 이름을 입력하세요
+              연결되었습니다. 이름을 입력한 뒤 등록해 주세요.
             </Text>
             <TextInput
               style={styles.modalInput}
@@ -397,7 +469,7 @@ export function BLEConnectionScreen({
                 {isRegistering ? (
                   <ActivityIndicator size="small" color="white" />
                 ) : (
-                  <Text style={styles.modalButtonConfirmText}>등록</Text>
+                  <Text style={styles.modalButtonConfirmText}>서버에 등록</Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -449,6 +521,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#888888',
     fontWeight: '500',
+  },
+  bleCountText: {
+    fontSize: 13,
+    color: '#2E8B7E',
+    fontWeight: '600',
+    marginTop: 6,
   },
   statusCard: {
     backgroundColor: 'white',
@@ -571,6 +649,23 @@ const styles = StyleSheet.create({
     backgroundColor: '#6366F1',
   },
   identifyButtonText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  confirmButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#2E8B7E',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  confirmButtonDisabled: {
+    opacity: 0.5,
+  },
+  confirmButtonText: {
     color: 'white',
     fontSize: 12,
     fontWeight: '600',

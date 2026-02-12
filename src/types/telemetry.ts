@@ -249,9 +249,9 @@ export function isSpecialHRValue(hr: number): boolean {
 export function getHRSpecialMessage(hr: number): {title: string; message: string} | null {
   switch (hr) {
     case 7:
-      return {title: '배터리 부족', message: '배터리가 부족합니다'};
+      return {title: '배터리 부족', message: '배터리 부족으로 전원이 꺼집니다.'};
     case 8:
-      return {title: '비정상적인 값', message: '비정상적인 값입니다'};
+      return {title: '이상 신호', message: '비정상적인 값입니다'};
     case 9:
       return {title: '움직임 감지', message: '움직임이 감지 되었습니다'};
     default:
@@ -260,7 +260,22 @@ export function getHRSpecialMessage(hr: number): {title: string; message: string
 }
 
 /**
- * 표시용 HR 값 계산 (7, 8, 9는 null로 반환하여 "--" 표시)
+ * BPM 숫자 영역에 표시할 문구 (8: 이상 신호, 9: 움직임 감지). 7은 배터리 부족으로 연결 해제 처리.
+ */
+export function getHRDisplayLabel(hr: number | null | undefined): string | null {
+  if (hr === null || hr === undefined) return null;
+  switch (hr) {
+    case 8:
+      return '이상 신호';
+    case 9:
+      return '움직임 감지';
+    default:
+      return null;
+  }
+}
+
+/**
+ * 표시용 HR 값 계산 (7, 8, 9는 null로 반환하여 라벨 또는 "--" 표시)
  */
 export function getDisplayHR(hr: number | null | undefined): number | null {
   if (hr === null || hr === undefined) return null;

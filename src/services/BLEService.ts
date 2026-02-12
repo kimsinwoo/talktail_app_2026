@@ -1,9 +1,5 @@
-import BleManager, {
-  BleDisconnectPeripheralEvent,
-  BleManagerDidUpdateValueForCharacteristicEvent,
-  Peripheral,
-} from 'react-native-ble-manager';
-import {NativeEventEmitter, NativeModules, Platform, PermissionsAndroid, Alert, Linking, AppState, AppStateStatus} from 'react-native';
+import {BleManager, Device, Characteristic, Subscription, State} from 'react-native-ble-plx';
+import {Platform, PermissionsAndroid, Alert, Linking, AppState, AppStateStatus} from 'react-native';
 import {Buffer} from 'buffer';
 import {notificationService} from './NotificationService';
 import {backendApiService} from './BackendApiService';
@@ -14,16 +10,44 @@ import {saveConnectedDeviceId, getConnectedDeviceId, removeConnectedDeviceId} fr
 import {getBLEDispatch} from './BLEContext';
 import dayjs from 'dayjs';
 import {apiService} from './ApiService';
+import Toast from 'react-native-toast-message';
 
+// GATT 프로파일: Nordic UART Service / RX(Notify·Read), TX(Write)
 const SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
-const CHARACTERISTIC_UUID_RX = '6e400003-b5a3-f393-e0a9-e50e24dcca9e'; // 읽기용 (Notify)
-const CHARACTERISTIC_UUID_TX = '6e400002-b5a3-f393-e0a9-e50e24dcca9e'; // 쓰기용 (Write)
+const CHARACTERISTIC_UUID_RX = '6e400003-b5a3-f393-e0a9-e50e24dcca9e'; // 수신 (Notify)
+const CHARACTERISTIC_UUID_TX = '6e400002-b5a3-f393-e0a9-e50e24dcca9e'; // 송신 (Write)
+// Nordic UART: 대부분 장치가 명령 끝을 \r\n으로 인식
+const UART_LINE_END = '\r\n';
 
-const BleManagerModule = NativeModules.BleManager;
-// NativeEventEmitter 경고 해결: 모듈이 null이거나 메서드가 없을 경우 처리
-const bleManagerEmitter = BleManagerModule
-  ? new NativeEventEmitter(BleManagerModule)
-  : new NativeEventEmitter();
+/** 디바이스별 연결 엔트리 (다중 BLE 지원) */
+interface ConnectionEntry {
+  device: Device;
+  disconnectSubscription: Subscription;
+  monitorSubscription: Subscription | null;
+  isSubscribed: boolean;
+  currentSessionId: string | null;
+}
+
+/** 디바이스별 데이터 버퍼 (notify/파싱용) */
+interface DeviceBufferState {
+  dataBufferRef: {data: number[]; timestamp: number}[];
+  metricsDataRef: {samplingRate: number; hr: number; spo2: number; temp: number; battery: number} | null;
+  pendingDataRef: {data: number[]; timestamp: number}[] | null;
+  irChartDataBufferRef: number[];
+  lastIrDispatchTime: number;
+  notifyBuffer: string;
+}
+
+function createDeviceBufferState(): DeviceBufferState {
+  return {
+    dataBufferRef: [],
+    metricsDataRef: null,
+    pendingDataRef: null,
+    irChartDataBufferRef: [],
+    lastIrDispatchTime: 0,
+    notifyBuffer: '',
+  };
+}
 
 interface BLEServiceCallbacks {
   onDataReceived?: (data: {
@@ -40,35 +64,106 @@ interface BLEServiceCallbacks {
 }
 
 class BLEService {
+  private manager: BleManager | null = null;
+  /** 다중 BLE: 연결된 디바이스 맵 (deviceId -> 엔트리) */
+  private connectedDevices = new Map<string, ConnectionEntry>();
+  /** 다중 BLE: 디바이스별 데이터 버퍼 */
+  private deviceBufferStates = new Map<string, DeviceBufferState>();
+  /** 마지막 연결된 디바이스 ID (getConnectedDeviceId 등 레거시 호환) */
+  private primaryDeviceId: string | null = null;
+
   private isInitialized = false;
   private isScanning = false;
-  private connectedDeviceId: string | null = null;
-  private isSubscribed = false;
   private callbacks: BLEServiceCallbacks = {};
-  private dataBufferRef: {data: number[]; timestamp: number}[] = [];
-  private metricsDataRef: {
-    samplingRate: number;
-    hr: number;
-    spo2: number;
-    temp: number;
-    battery: number;
-  } | null = null;
-  private pendingDataRef: {data: number[]; timestamp: number}[] | null = null;
-  
-  // IR 차트 데이터 실시간 업데이트용 (참고 코드처럼)
-  private irChartDataBufferRef: number[] = [];
-  private lastIrDispatchTime: number = 0;
-  private lastErrorTime: number = 0; // 에러 로그 스팸 방지용
-  private lastDataLogTime: number = 0; // 데이터 로그 스팸 방지용
+  /** 레거시 단일 디바이스 참조 (primary와 동기화) */
+  private get connectedDevice(): Device | null {
+    return this.primaryDeviceId ? this.connectedDevices.get(this.primaryDeviceId)?.device ?? null : null;
+  }
+  private get connectedDeviceId(): string | null {
+    return this.primaryDeviceId;
+  }
+  private get monitorSubscription(): Subscription | null {
+    return this.primaryDeviceId ? this.connectedDevices.get(this.primaryDeviceId)?.monitorSubscription ?? null : null;
+  }
+  private get disconnectSubscription(): Subscription | null {
+    return this.primaryDeviceId ? this.connectedDevices.get(this.primaryDeviceId)?.disconnectSubscription ?? null : null;
+  }
+  private get isSubscribed(): boolean {
+    return this.primaryDeviceId ? (this.connectedDevices.get(this.primaryDeviceId)?.isSubscribed ?? false) : false;
+  }
+  private get currentSessionId(): string | null {
+    return this.primaryDeviceId ? (this.connectedDevices.get(this.primaryDeviceId)?.currentSessionId ?? null) : null;
+  }
+  private set currentSessionId(v: string | null) {
+    if (this.primaryDeviceId) {
+      const e = this.connectedDevices.get(this.primaryDeviceId);
+      if (e) e.currentSessionId = v;
+    }
+  }
+  /** 레거시: primary 디바이스 버퍼 (또는 첫 연결 디바이스) */
+  private get dataBufferRef(): {data: number[]; timestamp: number}[] {
+    return this.getBufferState(this.primaryDeviceId).dataBufferRef;
+  }
+  private set dataBufferRef(v: {data: number[]; timestamp: number}[]) {
+    const s = this.getBufferState(this.primaryDeviceId);
+    if (s) s.dataBufferRef = v;
+  }
+  private get metricsDataRef(): {samplingRate: number; hr: number; spo2: number; temp: number; battery: number} | null {
+    return this.getBufferState(this.primaryDeviceId).metricsDataRef;
+  }
+  private set metricsDataRef(v: {samplingRate: number; hr: number; spo2: number; temp: number; battery: number} | null) {
+    const s = this.getBufferState(this.primaryDeviceId);
+    if (s) s.metricsDataRef = v;
+  }
+  private get pendingDataRef(): {data: number[]; timestamp: number}[] | null {
+    return this.getBufferState(this.primaryDeviceId).pendingDataRef;
+  }
+  private set pendingDataRef(v: {data: number[]; timestamp: number}[] | null) {
+    const s = this.getBufferState(this.primaryDeviceId);
+    if (s) s.pendingDataRef = v;
+  }
+  private get irChartDataBufferRef(): number[] {
+    return this.getBufferState(this.primaryDeviceId).irChartDataBufferRef;
+  }
+  private set irChartDataBufferRef(v: number[]) {
+    const s = this.getBufferState(this.primaryDeviceId);
+    if (s) s.irChartDataBufferRef = v;
+  }
+  private get lastIrDispatchTime(): number {
+    return this.getBufferState(this.primaryDeviceId).lastIrDispatchTime;
+  }
+  private set lastIrDispatchTime(v: number) {
+    const s = this.getBufferState(this.primaryDeviceId);
+    if (s) s.lastIrDispatchTime = v;
+  }
+  private get notifyBuffer(): string {
+    return this.getBufferState(this.primaryDeviceId).notifyBuffer;
+  }
+  private set notifyBuffer(v: string) {
+    const s = this.getBufferState(this.primaryDeviceId);
+    if (s) s.notifyBuffer = v;
+  }
+
+  private _dummyBufferState: DeviceBufferState | null = null;
+  private getBufferState(deviceId: string | null): DeviceBufferState {
+    if (!deviceId) {
+      this._dummyBufferState = this._dummyBufferState ?? createDeviceBufferState();
+      return this._dummyBufferState;
+    }
+    let s = this.deviceBufferStates.get(deviceId);
+    if (!s) {
+      s = createDeviceBufferState();
+      this.deviceBufferStates.set(deviceId, s);
+    }
+    return s;
+  }
+
+  private lastErrorTime: number = 0;
+  private lastDataLogTime: number = 0;
   private petName: string = '우리 아이';
-  
-  // 🔍 MTU 분할 대응: notify 조각 누적 버퍼
-  private notifyBuffer: string = '';
-  
-  // 백엔드 연동을 위한 정보
+
   private userEmail: string = '';
   private petId: string = '';
-  private currentSessionId: string | null = null;
   
   // 이벤트 리스너 중복 등록 방지를 위한 플래그
   private listenersRegistered = false;
@@ -81,8 +176,9 @@ class BLEService {
   // AppState 추적
   private currentAppState: AppStateStatus = AppState.currentState;
   
-  // 데이터 전송 디바운스
+  // 데이터 전송 디바운스 (디바이스별로 서버 전송 후 CSV 저장)
   private dataSendQueue: Array<{
+    deviceId: string;
     hr?: number;
     spo2?: number;
     temp?: number;
@@ -104,6 +200,15 @@ class BLEService {
   // ✅ 허브 OFFLINE fallback: 1회 스캔 중 조건 맞는 디바이스 1대만 연결 시도
   private fallbackConnectPending = false;
 
+  /** 연결 중 복방지: 연결 시도 중인 deviceId 집합 (디바이스별로 다른 연결 병렬 허용) */
+  private connectInProgressIds = new Set<string>();
+  private readonly CONNECT_TIMEOUT_MS = 15000;
+  private readonly CONNECT_RETRY_DELAY_MS = 1500;
+
+  // "Tailing 디바이스가 아님" 로그 스팸 방지: 디바이스별 마지막 로그 시각
+  private lastNonTailingLogByName: Record<string, number> = {};
+  private static readonly NON_TAILING_LOG_THROTTLE_MS = 30000;
+
   async initialize() {
     if (this.isInitialized) {
       console.log('BLE 이미 초기화됨');
@@ -117,61 +222,21 @@ class BLEService {
     }
 
     try {
-      console.log('BLE 초기화 시작...');
-      
-      // AppState 리스너 등록
+      console.log('BLE 초기화 시작 (react-native-ble-plx)...');
       AppState.addEventListener('change', this.handleAppStateChange);
-      
-      // Native 모듈이 존재하는지 확인
-      if (!BleManagerModule) {
-        console.error('BLE Manager 모듈을 찾을 수 없습니다.');
-        throw new Error('BLE Manager 모듈을 찾을 수 없습니다.');
+
+      if (!this.manager) {
+        this.manager = new BleManager();
+        console.log('BLE Manager (ble-plx) created');
       }
 
-      // BLE 초기화
-      try {
-        await BleManager.start({showAlert: false});
-        console.log('BLE Manager initialized');
-      } catch (startError: any) {
-        console.error('BLE Manager start 실패:', startError);
-        // "already started" 에러는 무시
-        if (startError?.message && !startError.message.includes('already started')) {
-          throw startError;
-        }
-      }
-
-      // BLE SafeGuard 초기화
       BLESafeGuard.initialize();
-
-      // 저장된 디바이스 ID 불러오기
       this.savedDeviceId = await getConnectedDeviceId();
       if (this.savedDeviceId) {
         console.log('📱 저장된 디바이스 ID:', this.savedDeviceId);
       }
 
-      // 이벤트 리스너는 한 번만 등록 (중복 등록 방지)
-      if (!this.listenersRegistered) {
-        try {
-          const boundDiscoverPeripheral = this.handleDiscoverPeripheral.bind(this);
-          const boundStopScan = this.handleStopScan.bind(this);
-          const boundUpdateValue = this.handleUpdateValueForCharacteristic.bind(this);
-          const boundDisconnect = this.handleDisconnectPeripheral.bind(this);
-
-          BleManager.onDiscoverPeripheral(boundDiscoverPeripheral);
-          BleManager.onStopScan(boundStopScan);
-          BleManager.onDidUpdateValueForCharacteristic(boundUpdateValue);
-          BleManager.onDisconnectPeripheral(boundDisconnect);
-          
-          this.listenersRegistered = true;
-          console.log('이벤트 리스너 등록 완료');
-        } catch (listenerError: unknown) {
-          const errorMessage = listenerError instanceof Error ? listenerError.message : String(listenerError);
-          console.error('이벤트 리스너 등록 중 오류:', errorMessage);
-          // 리스너 등록 실패해도 계속 진행 (이미 등록되었을 수 있음)
-          this.listenersRegistered = true;
-        }
-      }
-
+      this.listenersRegistered = true;
       this.isInitialized = true;
       logger.bleSuccess('initialize', {
         platform: Platform.OS,
@@ -239,34 +304,28 @@ class BLEService {
     this.petId = petId;
   }
 
-  private handleDiscoverPeripheral(peripheral: Peripheral) {
+  /** react-native-ble-plx 스캔 콜백: 발견된 디바이스 처리 */
+  private handleDiscoveredDevice(device: Device) {
     try {
-      if (this.discoverMode === 'none') {
-        return;
-      }
-      const deviceName = peripheral.name || '';
-      const deviceId = peripheral.id;
-      
-      // Tailing 디바이스만 필터링 (대소문자 구분 없이)
+      if (this.discoverMode === 'none') return;
+      const deviceName = device.name || device.localName || '';
+      const deviceId = device.id;
+
       if (deviceName.toLowerCase().includes('tailing')) {
         console.log('✅ Tailing 디바이스 발견:', deviceName, deviceId);
 
-        // ✅ 허브 OFFLINE fallback: 저장된 디바이스가 잡히면 1대만 연결 (없으면 첫 Tailing 1대)
         if (this.fallbackConnectPending && !this.connectedDeviceId && !this.isAutoConnecting) {
-          if (this.savedDeviceId) {
-            if (deviceId === this.savedDeviceId) {
-              this.fallbackConnectPending = false;
-              console.log('🛟 허브 OFFLINE fallback: 저장된 디바이스 발견 → BLE 연결 시도', deviceId);
-              this.attemptAutoConnect(deviceId);
-            }
-          } else {
+          if (this.savedDeviceId && deviceId === this.savedDeviceId) {
+            this.fallbackConnectPending = false;
+            console.log('🛟 허브 OFFLINE fallback: 저장된 디바이스 발견 → BLE 연결 시도', deviceId);
+            this.attemptAutoConnect(deviceId);
+          } else if (!this.savedDeviceId) {
             this.fallbackConnectPending = false;
             console.log('🛟 허브 OFFLINE fallback: 첫 Tailing 디바이스 → BLE 연결 시도', deviceId);
             this.attemptAutoConnect(deviceId);
           }
         }
-        
-        // 저장된 디바이스 ID와 일치하면 자동 연결 시도
+
         if (
           this.autoConnectEnabled &&
           this.savedDeviceId &&
@@ -277,27 +336,30 @@ class BLEService {
           console.log('🔄 저장된 디바이스 감지! 자동 연결 시도:', deviceId);
           this.attemptAutoConnect(deviceId);
         }
-        
-        // 안전하게 콜백 호출
+
         if (this.callbacks.onDeviceFound) {
           try {
             this.callbacks.onDeviceFound({
               id: deviceId,
               name: deviceName || 'Tailing Device',
-              rssi: peripheral.rssi,
+              rssi: device.rssi ?? undefined,
             });
           } catch (callbackError) {
             console.error('onDeviceFound 콜백 에러:', callbackError);
           }
         }
       } else {
-        // 허브 프로비저닝(ESP32_S3) 스캔 중에도 BLEService가 같이 돌면 로그가 과도하게 쌓일 수 있어 최소화
-        if (typeof __DEV__ !== 'undefined' && __DEV__ && deviceName) {
-          console.log('Tailing 디바이스가 아님, 무시:', deviceName);
+        if (__DEV__ && deviceName) {
+          const now = Date.now();
+          const last = this.lastNonTailingLogByName[deviceName] ?? 0;
+          if (now - last >= BLEService.NON_TAILING_LOG_THROTTLE_MS) {
+            this.lastNonTailingLogByName[deviceName] = now;
+            console.log('Tailing 디바이스가 아님, 무시:', deviceName);
+          }
         }
       }
     } catch (error) {
-      console.error('handleDiscoverPeripheral error:', error);
+      console.error('handleDiscoveredDevice error:', error);
     }
   }
 
@@ -331,8 +393,11 @@ class BLEService {
         },
         'general'
       );
-    } catch (error) {
-      console.error('❌ 자동 연결 실패:', error);
+    } catch (error: unknown) {
+      const msg = String((error as Error)?.message ?? '');
+      if (!msg.includes('Operation was cancelled') && !msg.includes('cancelled')) {
+        console.error('❌ 자동 연결 실패:', error);
+      }
       // 자동 연결 실패는 조용히 무시 (사용자가 수동으로 연결할 수 있음)
     } finally {
       this.isAutoConnecting = false;
@@ -417,22 +482,21 @@ class BLEService {
       }
     } else if (Platform.OS === 'ios') {
       try {
-        const state = (await BleManager.checkState()) as any;
-        if (state === 'unauthorized') {
+        const manager = this.manager;
+        if (!manager) return false;
+        const state = await manager.state();
+        if (state === State.Unauthorized) {
           Alert.alert(
             '권한 필요',
             '블루투스 권한이 필요합니다. 설정에서 권한을 허용해주세요.',
             [
               {text: '취소', style: 'cancel'},
-              {
-                text: '설정으로 이동',
-                onPress: () => Linking.openURL('app-settings:'),
-              },
+              {text: '설정으로 이동', onPress: () => Linking.openURL('app-settings:')},
             ],
           );
           return false;
         }
-        return state !== 'off' && state !== 'unauthorized';
+        return state !== State.PoweredOff && state !== State.Unauthorized;
       } catch (err) {
         console.warn('iOS 권한 확인 중 오류:', err);
         return false;
@@ -474,30 +538,19 @@ class BLEService {
         try {
           console.log('🔍 startScan 호출됨');
           
-          // Native 모듈 확인 - 더 안전하게
-          try {
-            if (!BleManagerModule || typeof BleManagerModule !== 'object') {
-              throw new Error('BLE Manager 모듈을 찾을 수 없습니다.');
-            }
-          } catch (moduleError: any) {
-            console.error('Native 모듈 확인 실패:', moduleError);
-            const error = new Error('BLE Manager 모듈을 찾을 수 없습니다.');
-            if (this.callbacks.onError) {
-              try {
-                this.callbacks.onError(error);
-              } catch (e) {
-                console.error('에러 콜백 호출 실패:', e);
-              }
-            }
-            reject(error);
-            return;
-          }
-        
+          const manager = this.manager;
+        if (!manager) {
+          const error = new Error('BLE Manager가 초기화되지 않았습니다.');
+          if (this.callbacks.onError) this.callbacks.onError(error);
+          reject(error);
+          return;
+        }
+
         // 이미 스캔 중이면 먼저 정리 (강제 중지)
         if (this.isScanning || this.scanInProgress) {
           console.log('이전 스캔 정리 중...');
           try {
-            await BleManager.stopScan();
+            await manager.stopDeviceScan();
             console.log('이전 스캔 중지 완료');
           } catch (stopError: unknown) {
             const errorMessage = stopError instanceof Error ? stopError.message : String(stopError);
@@ -505,14 +558,10 @@ class BLEService {
           }
           this.isScanning = false;
           this.scanInProgress = false;
-          
-          // 타임아웃 정리
           if (this.scanTimeoutId) {
             clearTimeout(this.scanTimeoutId);
             this.scanTimeoutId = null;
           }
-          
-          // 충분한 대기 시간 (iOS는 더 길게)
           const waitTime = Platform.OS === 'ios' ? 1500 : 1000;
           await new Promise<void>(resolve => setTimeout(resolve, waitTime));
         }
@@ -557,17 +606,13 @@ class BLEService {
           return;
         }
 
-        // 블루투스 상태 확인 - 더 안전하게
+        // 블루투스 상태 확인 (react-native-ble-plx State)
         console.log('블루투스 상태 확인 중...');
-        let state: string;
+        let state: State;
         try {
-          // checkState 호출을 안전하게 래핑
-          if (typeof BleManager.checkState !== 'function') {
-            throw new Error('checkState 함수를 사용할 수 없습니다.');
-          }
-          state = await BleManager.checkState();
+          state = await manager.state();
           console.log('블루투스 상태:', state);
-        } catch (stateError: any) {
+        } catch (stateError: unknown) {
           console.error('블루투스 상태 확인 중 오류:', stateError);
           const error = new Error('블루투스 상태를 확인할 수 없습니다.');
           if (this.callbacks.onError) {
@@ -580,21 +625,16 @@ class BLEService {
           reject(error);
           return;
         }
-        
-        if (state === 'off') {
+
+        if (state === State.PoweredOff) {
           const error = new Error('블루투스가 꺼져있습니다. 설정에서 블루투스를 켜주세요.');
-          if (this.callbacks.onError) {
-            this.callbacks.onError(error);
-          }
+          if (this.callbacks.onError) this.callbacks.onError(error);
           reject(error);
           return;
         }
-
-        if (state === 'unauthorized') {
+        if (state === State.Unauthorized) {
           const error = new Error('블루투스 권한이 거부되었습니다. 설정에서 권한을 허용해주세요.');
-          if (this.callbacks.onError) {
-            this.callbacks.onError(error);
-          }
+          if (this.callbacks.onError) this.callbacks.onError(error);
           reject(error);
           return;
         }
@@ -631,95 +671,27 @@ class BLEService {
         });
         
         try {
-          logger.ble('BLEService', '스캔 명령 실행 중...', {
+          const allowDuplicates = Platform.OS !== 'ios';
+          logger.ble('BLEService', 'BLE 스캔 시작 (ble-plx)', {
             platform: Platform.OS,
-            hasScanFunction: typeof BleManager.scan === 'function',
+            allowDuplicates,
           });
-          
-          // scan 함수 존재 확인
-          if (typeof BleManager.scan !== 'function') {
-            logger.crashContext('startScan - scan function missing', {
-              BleManagerType: typeof BleManager,
-              BleManagerScanType: typeof BleManager.scan,
-            });
-            throw new Error('scan 함수를 사용할 수 없습니다.');
-          }
-          
-          // iOS에서는 스캔 시간을 더 짧게 설정
-          const scanDuration = Platform.OS === 'ios' ? 10 : 15;
-          
-          logger.ble('BLEService', 'BLE 스캔 호출 직전', {
-            scanDuration,
-            allowDuplicates: Platform.OS === 'ios' ? false : true,
-            platform: Platform.OS,
-            appState: this.currentAppState,
+
+          await BLESafeGuard.guardScan(manager, async () => {
+            await manager.startDeviceScan(
+              null,
+              {allowDuplicates},
+              (err, device) => {
+                if (err) {
+                  logger.bleError('startDeviceScan callback', err);
+                  return;
+                }
+                if (device) this.handleDiscoveredDevice(device);
+              },
+            );
           });
-          
-          // scan 호출을 한 번 더 안전하게 래핑 (SafeGuard 사용)
-          try {
-            // iOS에서는 allowDuplicates를 false로 설정 (크래시 방지)
-            const allowDuplicates = Platform.OS === 'ios' ? false : true;
-            
-            logger.ble('BLEService', 'BLESafeGuard.guardScan 호출 직전', {
-              allowDuplicates,
-              scanDuration,
-            });
-            
-            await BLESafeGuard.guardScan(async () => {
-              logger.ble('BLEService', 'BleManager.scan 호출 직전 - 네이티브 진입점', {
-                serviceUUIDs: 'empty array (all devices)',
-                scanDuration,
-                allowDuplicates,
-                platform: Platform.OS,
-              });
-              
-              // iOS에서 빈 배열 [] 전달 시 크래시 발생
-              // react-native-ble-manager 12.4.3의 iOS 구현 버그:
-              // -[__NSArrayM __swift_objectForKeyedSubscript:]: unrecognized selector
-              // 해결: iOS에서는 빈 배열 대신 undefined를 전달
-              if (Platform.OS === 'ios') {
-                // iOS: 빈 배열 대신 undefined 전달 (모든 디바이스 스캔)
-                // undefined를 전달하면 모든 디바이스를 스캔합니다 (빈 배열과 동일한 효과)
-                logger.ble('BLEService', 'iOS: undefined로 스캔 시도 (빈 배열 크래시 방지)', {
-                  scanDuration,
-                  allowDuplicates,
-                });
-                // @ts-ignore - TypeScript 타입 체크 우회 (iOS에서 undefined 허용)
-                await (BleManager as any).scan(undefined, scanDuration, allowDuplicates);
-              } else {
-                // Android: 빈 배열 사용 (정상 작동)
-                await (BleManager as any).scan([], scanDuration, allowDuplicates);
-              }
-              
-              logger.ble('BLEService', 'BleManager.scan 호출 완료 - 네이티브 복귀', {
-                scanDuration,
-                allowDuplicates,
-                platform: Platform.OS,
-              });
-            });
-            
-            logger.bleSuccess('startScan', {
-              scanDuration,
-              allowDuplicates,
-              platform: Platform.OS,
-            });
-          } catch (scanCallError: unknown) {
-            logger.bleError('startScan - scan call failed', scanCallError);
-            logger.crashContext('startScan - scan call error', {
-              error: scanCallError,
-              isScanning: this.isScanning,
-              scanInProgress: this.scanInProgress,
-              appState: this.currentAppState,
-            });
-            this.isScanning = false;
-            this.scanInProgress = false;
-            this.scanLock = false;
-            throw scanCallError;
-          }
-          
-          // ✅ 자동 스캔 중지 타이머 제거 (사용자 요청)
-          // 자동 스캔은 수동으로 stopScan()을 호출해야 중지됨
-          
+
+          logger.bleSuccess('startScan', {platform: Platform.OS});
           resolve();
         } catch (scanError: unknown) {
           console.error('❌ 스캔 시작 실패:', scanError);
@@ -776,34 +748,30 @@ class BLEService {
    * 스캔 중지 (안전한 버전)
    */
   async stopScan(): Promise<void> {
-    if (!this.isScanning && !this.scanInProgress) {
-      return;
-    }
+    if (!this.isScanning && !this.scanInProgress) return;
 
     try {
-      // AppState 체크
       if (this.currentAppState !== 'active') {
         console.warn('앱이 active 상태가 아닙니다. 스캔 중지는 계속 진행합니다.');
       }
-
-      await BleManager.stopScan();
+      const manager = this.manager;
+      if (manager) await manager.stopDeviceScan();
       this.isScanning = false;
       this.scanInProgress = false;
       this.scanLock = false;
-      
+      this.fallbackConnectPending = false;
       if (this.scanTimeoutId) {
         clearTimeout(this.scanTimeoutId);
         this.scanTimeoutId = null;
       }
-      
+      const onScanStopped = this.callbacks.onScanStopped;
+      if (onScanStopped) setTimeout(() => { try { onScanStopped(); } catch (e) { console.error('onScanStopped 콜백 에러:', e); } }, 0);
       console.log('✅ 스캔 중지 완료');
     } catch (error: unknown) {
       console.error('스캔 중지 실패:', error);
-      // 에러가 발생해도 상태는 리셋
       this.isScanning = false;
       this.scanInProgress = false;
       this.scanLock = false;
-      
       if (this.scanTimeoutId) {
         clearTimeout(this.scanTimeoutId);
         this.scanTimeoutId = null;
@@ -811,79 +779,113 @@ class BLEService {
     }
   }
 
+  /** Promise를 제한 시간 안에 완료되도록 래핑 (iOS 연결 무한 대기 방지) */
+  private withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`${label} 시간 초과 (${ms / 1000}초). 디바이스가 가까이 있는지 확인해 주세요.`)), ms),
+    );
+    return Promise.race([promise, timeout]);
+  }
+
   async connect(deviceId: string, furColor?: string): Promise<void> {
-    // AppState 체크 (필수)
     if (this.currentAppState !== 'active') {
       throw new Error('앱이 활성화되지 않았습니다. BLE 연결은 active 상태에서만 가능합니다.');
     }
+    if (this.connectInProgressIds.has(deviceId)) {
+      throw new Error('이미 이 디바이스 연결 시도 중입니다. 잠시 후 다시 시도해 주세요.');
+    }
+    if (this.connectedDevices.has(deviceId)) {
+      this.primaryDeviceId = deviceId;
+      const dispatch = getBLEDispatch();
+      if (dispatch) {
+        dispatch({type: 'ADD_CONNECTED_DEVICE', payload: deviceId});
+        dispatch({type: 'SET_DEVICE_ID', payload: deviceId});
+        dispatch({type: 'SET_CONNECTED', payload: true});
+      }
+      if (this.callbacks.onDeviceConnected) this.callbacks.onDeviceConnected(deviceId);
+      return;
+    }
+    this.connectInProgressIds.add(deviceId);
 
     try {
-      // 스캔 중이면 먼저 중지 (중요: iOS에서 scan + notify 동시 실행 시 크래시)
       if (this.isScanning || this.scanInProgress) {
         console.log('연결 전 스캔 중지 중...');
         await this.stopScan();
-        // 스캔 중지 후 충분한 대기 시간 (iOS는 더 길게)
         const waitTime = Platform.OS === 'ios' ? 1000 : 500;
         await new Promise<void>(resolve => setTimeout(resolve, waitTime));
       }
 
-      // 이전 연결 정리
-      if (this.isSubscribed && this.connectedDeviceId) {
-        await this.disconnect();
-        // 연결 해제 후 대기
-        await new Promise<void>(resolve => setTimeout(resolve, 300));
-      }
+      const manager = this.manager;
+      if (!manager) throw new Error('BLE Manager가 초기화되지 않았습니다.');
 
-      // 연결 상태 확인 (Android)
-      if (Platform.OS === 'android') {
+      let device: Device | undefined;
+      const doPhysicalConnect = async (): Promise<Device> => {
+        const connected = await manager.isDeviceConnected(deviceId);
+        if (connected) {
+          const devices = await manager.devices([deviceId]);
+          if (devices.length > 0) return devices[0];
+        }
+        return this.withTimeout(
+          manager.connectToDevice(deviceId, {requestMTU: 185}),
+          this.CONNECT_TIMEOUT_MS,
+          'BLE 연결',
+        );
+      };
+
+      let lastError: unknown = null;
+      for (let attempt = 1; attempt <= 2; attempt++) {
         try {
-          const isConnected = await BleManager.isPeripheralConnected(deviceId, []);
-          if (isConnected) {
-            console.log('이미 연결된 디바이스입니다.');
-            this.connectedDeviceId = deviceId;
+          device = await doPhysicalConnect();
+          lastError = null;
+          break;
+        } catch (e) {
+          lastError = e;
+          if (attempt === 1) {
+            console.warn('BLE 연결 1차 실패, 재시도 대기 중...', (e as Error)?.message);
+            try {
+              await manager.cancelDeviceConnection(deviceId);
+            } catch (_) {}
+            await new Promise<void>(r => setTimeout(r, this.CONNECT_RETRY_DELAY_MS));
           } else {
-            // 연결
-            await BleManager.connect(deviceId);
-            this.connectedDeviceId = deviceId;
+            throw e;
           }
-        } catch (connectError: unknown) {
-          console.error('연결 확인/시도 실패:', connectError);
-          throw connectError;
-        }
-      } else {
-        // iOS는 직접 연결
-        await BleManager.connect(deviceId);
-        this.connectedDeviceId = deviceId;
-      }
-
-      // 연결 후 대기 (서비스 검색 전)
-      await new Promise<void>(resolve => setTimeout(resolve, 300));
-
-      // 서비스 및 특성 검색
-      const peripheralInfo = await BleManager.retrieveServices(deviceId);
-
-      // 연결 상태 재확인 (notify 전 필수 체크)
-      if (Platform.OS === 'android') {
-        const isStillConnected = await BleManager.isPeripheralConnected(deviceId, []);
-        if (!isStillConnected) {
-          throw new Error('디바이스 연결이 끊어졌습니다.');
         }
       }
+      if (lastError != null) throw lastError;
+      if (device == null) throw new Error('연결 실패');
 
-      // AppState 재확인 (notify 전) - 백그라운드 자동 연결을 위해 완화
-      // 백그라운드에서는 notify가 제한적이지만, 연결은 유지
-      // connect() 진입 시 active를 보장하므로 여기서는 별도 분기 불필요
+      await device.discoverAllServicesAndCharacteristics();
+      const disconnectSub = manager.onDeviceDisconnected(deviceId, () => {
+        this.handleDeviceDisconnected(deviceId);
+      });
+      const entry: ConnectionEntry = {
+        device,
+        disconnectSubscription: disconnectSub,
+        monitorSubscription: null,
+        isSubscribed: false,
+        currentSessionId: null,
+      };
+      this.connectedDevices.set(deviceId, entry);
+      this.deviceBufferStates.set(deviceId, createDeviceBufferState());
+      this.primaryDeviceId = deviceId;
 
-      // ⚠️ 연결 시 자동으로 notification을 시작하지 않음
-      // 측정 시작 버튼을 눌러야만 notification이 시작됨
-      // 참고 코드처럼 연결 시 즉시 notification을 시작하지 않도록 수정
-      console.log('📡 연결 완료 (측정 시작 버튼을 눌러야 데이터 수신 가능)');
-      
-      // 연결 시 notification을 시작하지 않음
-      this.isSubscribed = false;
-      
-      // ⚠️ 중요: 연결 해제 시 데이터 초기화
       const dispatch = getBLEDispatch();
+      if (dispatch) {
+        dispatch({type: 'ADD_CONNECTED_DEVICE', payload: deviceId});
+        dispatch({type: 'SET_CONNECTED', payload: true});
+        dispatch({type: 'SET_DEVICE_ID', payload: deviceId});
+      }
+      if (this.callbacks.onDeviceConnected) this.callbacks.onDeviceConnected(deviceId);
+      await new Promise<void>(resolve => setTimeout(resolve, 50));
+
+      if (Platform.OS === 'android') {
+        const isStillConnected = await manager.isDeviceConnected(deviceId);
+        if (!isStillConnected) throw new Error('디바이스 연결이 끊어졌습니다.');
+      }
+
+      console.log('📡 연결 완료 (측정 시작 버튼을 눌러야 데이터 수신 가능)', {deviceId, totalConnected: this.connectedDevices.size});
+
+      // 연결 직후 측정 데이터/측정중 상태 초기화
       if (dispatch) {
         dispatch({
           type: 'UPDATE_DATAS',
@@ -918,16 +920,23 @@ class BLEService {
       } catch (e) {
         // 백엔드가 없거나 네트워크 에러여도 BLE 연결은 계속 진행
       }
+
+      try {
+        await apiService.patch(`/device/${encodeURIComponent(deviceId)}/status`, {
+          status: 'online',
+          lastConnectedAt: new Date().toISOString(),
+        });
+      } catch (_) {
+        // 디바이스가 백엔드에 없을 수 있음(미등록 BLE 등) — 무시
+      }
       
       logger.bleSuccess('connect', {
         deviceId,
         platform: Platform.OS,
         note: '연결 완료, notification 시작됨 (데이터 수신 가능)',
       });
-      
-      if (this.callbacks.onDeviceConnected) {
-        this.callbacks.onDeviceConnected(deviceId);
-      }
+
+      // onDeviceConnected는 이미 물리적 연결 직후 호출됨 (중복 호출 방지 위해 여기서는 생략)
       notificationService.deviceConnected(this.petName);
       
       // 백그라운드 자동 연결 모니터링 시작
@@ -941,26 +950,48 @@ class BLEService {
           this.sendTextToDevice(deviceId, furColor);
         }, 500);
       }
-    } catch (error) {
-      console.error('Connection error:', error);
-      this.connectedDeviceId = null;
-      this.isSubscribed = false;
-      
-      // ⚠️ 중요: 연결 해제 시 데이터 초기화
+    } catch (error: unknown) {
+      const msg = String((error as Error)?.message ?? '');
+      const isCancelled = msg.includes('Operation was cancelled') || msg.includes('cancelled');
+      if (!isCancelled) {
+        console.error('Connection error:', error);
+      }
+      const hadThisDevice = this.connectedDevices.has(deviceId);
+      let stillConnected = false;
+      if (deviceId && this.manager) {
+        try {
+          stillConnected = await this.manager.isDeviceConnected(deviceId);
+        } catch (_) {}
+      }
+      if (stillConnected && hadThisDevice) {
+        const e = this.connectedDevices.get(deviceId);
+        if (e) e.isSubscribed = false;
+        console.warn('BLE 후속 단계 실패했으나 디바이스는 연결 유지됨.', (error as Error)?.message);
+        return;
+      }
+      this.connectedDevices.delete(deviceId);
+      this.deviceBufferStates.delete(deviceId);
+      if (this.primaryDeviceId === deviceId) {
+        this.primaryDeviceId = this.connectedDevices.size > 0 ? this.connectedDevices.keys().next().value ?? null : null;
+      }
       const dispatch = getBLEDispatch();
       if (dispatch) {
-        dispatch({
-          type: 'UPDATE_DATAS',
-          payload: {
-            hr: undefined,
-            spo2: undefined,
-            temp: undefined,
-            battery: undefined,
-          },
-        });
-        dispatch({type: 'SET_MEASURING', payload: false});
+        dispatch({type: 'REMOVE_CONNECTED_DEVICE', payload: deviceId});
+        if (this.connectedDevices.size === 0) {
+          dispatch({type: 'SET_CONNECTED', payload: false});
+          dispatch({type: 'SET_DEVICE_ID', payload: null});
+          dispatch({type: 'UPDATE_DATAS', payload: {hr: undefined, spo2: undefined, temp: undefined, battery: undefined}});
+          dispatch({type: 'SET_MEASURING', payload: false});
+        } else {
+          dispatch({type: 'SET_DEVICE_ID', payload: this.primaryDeviceId});
+        }
+      }
+      if (hadThisDevice && this.callbacks.onDeviceDisconnected) {
+        this.callbacks.onDeviceDisconnected(deviceId);
       }
       throw error;
+    } finally {
+      this.connectInProgressIds.delete(deviceId);
     }
   }
 
@@ -998,268 +1029,152 @@ class BLEService {
   }
 
   /**
-   * 측정 시작 (연결 후 별도로 호출)
+   * 측정 시작. deviceId 생략 시 primary 디바이스.
    */
-  async startMeasurement(): Promise<void> {
-    if (!this.connectedDeviceId) {
-      throw new Error('디바이스가 연결되지 않았습니다.');
+  async startMeasurement(deviceId?: string): Promise<void> {
+    const id = deviceId ?? this.primaryDeviceId;
+    if (!id) {
+      throw new Error('디바이스가 연결되지 않았습니다. 먼저 디바이스를 연결해 주세요.');
+    }
+    const entry = this.connectedDevices.get(id);
+    if (!entry) {
+      throw new Error('해당 디바이스가 연결 목록에 없습니다.');
     }
 
-    if (this.isSubscribed) {
-      logger.warn('BLEService', '이미 측정 중입니다.');
+    if (entry.isSubscribed) {
+      if (__DEV__) logger.ble('BLEService', '이미 측정 중 → MODE:C 재전송', {deviceId: id});
+      try {
+        await this.sendTextToDevice(id, 'MODE:C' + UART_LINE_END);
+      } catch (_) {}
       return;
     }
 
-    const deviceId = this.connectedDeviceId;
-
-    logger.bleStart('startMeasurement', {
-      deviceId,
-      appState: this.currentAppState,
-    });
-
-    // AppState 체크
+    logger.bleStart('startMeasurement', {deviceId: id, appState: this.currentAppState});
     if (this.currentAppState !== 'active') {
       throw new Error('앱이 활성화되지 않았습니다. 측정은 active 상태에서만 가능합니다.');
     }
 
+    const dev = entry.device;
     try {
-      // 연결 상태 재확인 (notify 전 필수 체크)
-      if (Platform.OS === 'android') {
-        const isConnected = await BleManager.isPeripheralConnected(deviceId, []);
-        if (!isConnected) {
-          throw new Error('디바이스 연결이 끊어졌습니다.');
-        }
+      if (Platform.OS === 'android' && this.manager) {
+        const isConnected = await this.manager.isDeviceConnected(id);
+        if (!isConnected) throw new Error('디바이스 연결이 끊어졌습니다.');
       }
 
-      // AppState 재확인 (notify 전)
-      if (this.currentAppState !== 'active') {
-        throw new Error('앱 상태가 변경되었습니다. 측정 시작을 중단합니다.');
-      }
-
-      // 알림 시작 (SafeGuard 사용)
-      logger.ble('BLEService', '측정 시작: notify 시작', {
-        deviceId,
-        serviceUUID: SERVICE_UUID,
-        characteristicUUID: CHARACTERISTIC_UUID_RX,
-      });
-
-      await BLESafeGuard.guardNotify(deviceId, async () => {
-        logger.ble('BLEService', 'BleManager.startNotification 호출 직전 - 네이티브 진입점 (크래시 가능 지점)', {
-          deviceId,
-          serviceUUID: SERVICE_UUID,
-          characteristicUUID: CHARACTERISTIC_UUID_RX,
-          appState: this.currentAppState,
-        });
-        
-        await BleManager.startNotification(
-          deviceId,
+      await BLESafeGuard.guardNotify(this.manager, id, () => {
+        entry.monitorSubscription?.remove();
+        entry.monitorSubscription = dev.monitorCharacteristicForService(
           SERVICE_UUID,
           CHARACTERISTIC_UUID_RX,
+          (err, characteristic) => {
+            if (err) {
+              const msg = String(err?.message ?? '');
+              if (msg.includes('disconnected') || msg.includes('Operation was cancelled')) return;
+              logger.bleError('monitorCharacteristic', err);
+              return;
+            }
+            if (characteristic?.value) this.handleNotifyValue(characteristic.value, id);
+          },
         );
-        
-        logger.ble('BLEService', 'BleManager.startNotification 호출 완료 - 네이티브 복귀', {
-          deviceId,
-        });
+        return Promise.resolve();
       });
 
-      this.isSubscribed = true;
-      
+      entry.isSubscribed = true;
+
       logger.bleSuccess('startNotification', {
         deviceId,
         serviceUUID: SERVICE_UUID,
         characteristicUUID: CHARACTERISTIC_UUID_RX,
       });
 
-      // 백엔드에 세션 시작 (백엔드가 없어도 측정은 계속 진행)
+      // Notify가 네이티브에서 활성화될 시간 확보 후 MODE:C 전송 (측정 미시작 방지)
+      await new Promise<void>(r => setTimeout(r, 350));
+
       if (this.userEmail && this.petId && this.petName) {
         try {
           const sessionResponse = await backendApiService.startSession({
-            deviceId,
+            deviceId: id,
             userEmail: this.userEmail,
             petName: this.petName,
             petId: this.petId,
           });
-          
           if (sessionResponse.success && sessionResponse.data) {
-            this.currentSessionId = sessionResponse.data.sessionId;
-            logger.ble('BLEService', '백엔드 세션 시작', {
-              sessionId: this.currentSessionId,
-            });
-          } else {
-            // 백엔드 서버가 없거나 실패해도 조용히 처리
-            logger.ble('BLEService', '백엔드 세션 시작 실패 (백엔드 없음 또는 오류)', {
-              error: sessionResponse.error,
-            });
+            entry.currentSessionId = sessionResponse.data.sessionId;
           }
-        } catch (error) {
-          // 백엔드 연결 실패는 조용히 처리 (서버가 없을 수 있음)
-          logger.ble('BLEService', '백엔드 세션 시작 실패 (백엔드 없음)', {
-            note: '백엔드 서버가 없어도 측정은 계속 진행됩니다.',
-          });
-        }
+        } catch (_) {}
       }
-      
-      // Notification 폴링 시작
       backendNotificationService.startPolling();
 
-      // 디바이스에 측정 시작 명령 전송 (MODE:C)
       try {
-        const commandSent = await this.sendTextToDevice(deviceId, 'MODE:C');
-        if (commandSent) {
-          logger.bleSuccess('startMeasurement - command sent', {
-            deviceId,
-            command: 'MODE:C',
-          });
-        } else {
-          logger.warn('BLEService', '측정 시작 명령 전송 실패', {
-            deviceId,
-            command: 'MODE:C',
-          });
-        }
-      } catch (commandError) {
-        logger.bleError('startMeasurement - command send', commandError);
-        // 명령 전송 실패해도 측정은 계속 진행 (notify는 이미 시작됨)
+        const commandSent = await this.sendTextToDevice(id, 'MODE:C' + UART_LINE_END);
+        if (commandSent) logger.bleSuccess('startMeasurement - command sent', {deviceId: id, command: 'MODE:C'});
+      } catch (commandError: unknown) {
+        const err = commandError as {message?: string};
+        if (!String(err?.message ?? '').includes('disconnected')) logger.bleError('startMeasurement - command send', commandError);
       }
 
-      logger.bleSuccess('startMeasurement', {
-        deviceId,
-        sessionId: this.currentSessionId,
-      });
+      const dispatch = getBLEDispatch();
+      if (dispatch) dispatch({type: 'SET_MEASURING_DEVICE', payload: {deviceId: id, measuring: true}});
+      logger.bleSuccess('startMeasurement', {deviceId: id, sessionId: entry.currentSessionId});
     } catch (error) {
       logger.bleError('startMeasurement', error);
-      this.isSubscribed = false;
-      
-      // ⚠️ 중요: 연결 해제 시 데이터 초기화
+      entry.isSubscribed = false;
       const dispatch = getBLEDispatch();
       if (dispatch) {
-        dispatch({
-          type: 'UPDATE_DATAS',
-          payload: {
-            hr: undefined,
-            spo2: undefined,
-            temp: undefined,
-            battery: undefined,
-          },
-        });
-        dispatch({type: 'SET_MEASURING', payload: false});
+        dispatch({type: 'UPDATE_DATAS', payload: {deviceId: id, hr: undefined, spo2: undefined, temp: undefined, battery: undefined}});
+        dispatch({type: 'SET_MEASURING_DEVICE', payload: {deviceId: id, measuring: false}});
       }
       throw error;
     }
   }
 
   /**
-   * 측정 중지 (연결은 유지)
+   * 측정 중지. deviceId 생략 시 primary 디바이스.
    */
-  async stopMeasurement(): Promise<void> {
-    if (!this.connectedDeviceId) {
+  async stopMeasurement(deviceId?: string): Promise<void> {
+    const id = deviceId ?? this.primaryDeviceId;
+    if (!id) {
       logger.warn('BLEService', '연결된 디바이스가 없습니다.');
       return;
     }
-
-    if (!this.isSubscribed) {
-      logger.warn('BLEService', '측정 중이 아닙니다.');
+    const entry = this.connectedDevices.get(id);
+    if (!entry || !entry.isSubscribed) {
+      const dispatch = getBLEDispatch();
+      if (dispatch) dispatch({type: 'SET_MEASURING_DEVICE', payload: {deviceId: id, measuring: false}});
       return;
     }
 
-    const deviceId = this.connectedDeviceId;
-
-    logger.bleStart('stopMeasurement', {
-      deviceId,
-    });
-
+    logger.bleStart('stopMeasurement', {deviceId: id});
     try {
-      // 측정 중지 명령 전송 (MODE:B)
       try {
-        await this.sendTextToDevice(deviceId, 'MODE:B');
-        console.log('✅ 측정 중지 명령 전송 완료 (MODE:B)');
+        await this.sendTextToDevice(id, 'MODE:B' + UART_LINE_END);
       } catch (cmdError) {
-        console.warn('⚠️ 측정 중지 명령 전송 실패:', cmdError);
-        // 명령 전송 실패해도 notification은 중지
+        logger.bleError('stopMeasurement - command send', cmdError);
       }
-      
-      // 알림 중지
-      await BleManager.stopNotification(deviceId, SERVICE_UUID, CHARACTERISTIC_UUID_RX);
-      this.isSubscribed = false;
-      
-      // ⚠️ 중요: 측정 중지 시 데이터 초기화
+      entry.monitorSubscription?.remove();
+      entry.monitorSubscription = null;
+      entry.isSubscribed = false;
+
       const dispatch = getBLEDispatch();
       if (dispatch) {
-        dispatch({
-          type: 'UPDATE_DATAS',
-          payload: {
-            hr: undefined,
-            spo2: undefined,
-            temp: undefined,
-            battery: undefined,
-          },
-        });
-        dispatch({type: 'SET_MEASURING', payload: false});
+        dispatch({type: 'UPDATE_DATAS', payload: {deviceId: id, hr: undefined, spo2: undefined, temp: undefined, battery: undefined}});
+        dispatch({type: 'SET_MEASURING_DEVICE', payload: {deviceId: id, measuring: false}});
       }
-
-      logger.ble('BLEService', '알림 중지 완료', {deviceId});
-
-      // 백엔드에 세션 종료 (백엔드가 없어도 조용히 처리)
-      if (this.currentSessionId) {
+      if (entry.currentSessionId) {
         try {
-          const stopResponse = await backendApiService.stopSession(deviceId, 'user_stopped');
-          if (stopResponse.success) {
-            logger.ble('BLEService', '백엔드 세션 종료', {
-              sessionId: this.currentSessionId,
-            });
-          }
-          this.currentSessionId = null;
-        } catch (error) {
-          // 백엔드 연결 실패는 조용히 처리 (서버가 없을 수 있음)
-          logger.ble('BLEService', '백엔드 세션 종료 실패 (백엔드 없음)', {
-            note: '백엔드 서버가 없어도 측정 중지는 정상적으로 완료됩니다.',
-          });
-          this.currentSessionId = null;
-        }
+          await backendApiService.stopSession(id, 'user_stopped');
+        } catch (_) {}
+        entry.currentSessionId = null;
       }
-
-      // Notification 폴링 중지
       backendNotificationService.stopPolling();
-
-      // 디바이스에 측정 중지 명령 전송 (MODE:B)
-      try {
-        const commandSent = await this.sendTextToDevice(deviceId, 'MODE:B');
-        if (commandSent) {
-          logger.bleSuccess('stopMeasurement - command sent', {
-            deviceId,
-            command: 'MODE:B',
-          });
-        } else {
-          logger.warn('BLEService', '측정 중지 명령 전송 실패', {
-            deviceId,
-            command: 'MODE:B',
-          });
-        }
-      } catch (commandError) {
-        logger.bleError('stopMeasurement - command send', commandError);
-        // 명령 전송 실패해도 측정 중지는 계속 진행 (notify는 이미 중지됨)
-      }
-
-      logger.bleSuccess('stopMeasurement', {
-        deviceId,
-      });
+      logger.bleSuccess('stopMeasurement', {deviceId: id});
     } catch (error) {
       logger.bleError('stopMeasurement', error);
-      // 에러가 발생해도 상태는 리셋
-      this.isSubscribed = false;
-      
-      // ⚠️ 중요: 연결 해제 시 데이터 초기화
+      entry.isSubscribed = false;
       const dispatch = getBLEDispatch();
       if (dispatch) {
-        dispatch({
-          type: 'UPDATE_DATAS',
-          payload: {
-            hr: undefined,
-            spo2: undefined,
-            temp: undefined,
-            battery: undefined,
-          },
-        });
-        dispatch({type: 'SET_MEASURING', payload: false});
+        dispatch({type: 'UPDATE_DATAS', payload: {deviceId: id, hr: undefined, spo2: undefined, temp: undefined, battery: undefined}});
+        dispatch({type: 'SET_MEASURING_DEVICE', payload: {deviceId: id, measuring: false}});
       }
       throw error;
     }
@@ -1271,16 +1186,17 @@ class BLEService {
    */
   async sendIdentifyCommand(deviceId: string): Promise<boolean> {
     try {
-      // 연결 상태 확인
-      if (Platform.OS === 'android') {
-        const isConnected = await BleManager.isPeripheralConnected(deviceId, []);
+      if (this.manager) {
+        const isConnected = await this.manager.isDeviceConnected(deviceId);
         if (!isConnected) {
           logger.warn('BLEService', '디바이스가 연결되지 않아 식별 명령 전송 실패', {deviceId});
           return false;
         }
+      } else {
+        return false;
       }
 
-      const commandSent = await this.sendTextToDevice(deviceId, 'MODE:D');
+      const commandSent = await this.sendTextToDevice(deviceId, 'MODE:D' + UART_LINE_END);
       if (commandSent) {
         logger.bleSuccess('sendIdentifyCommand - command sent', {
           deviceId,
@@ -1301,101 +1217,95 @@ class BLEService {
   }
 
   /**
+   * 모니터링 페이지 진입 시 디바이스에 MODE:C 명령 전송 (측정 모드 C)
+   * @param deviceId 디바이스 ID (BLE peripheral id)
+   */
+  async sendModeCCommand(deviceId: string): Promise<boolean> {
+    try {
+      const commandSent = await this.sendTextToDevice(deviceId, 'MODE:C' + UART_LINE_END);
+      if (commandSent && __DEV__) {
+        logger.ble('BLEService', 'sendModeCCommand 완료', { deviceId, command: 'MODE:C' });
+      }
+      return !!commandSent;
+    } catch (error) {
+      logger.bleError('sendModeCCommand', error);
+      return false;
+    }
+  }
+
+  /**
    * 측정 중인지 확인
    */
   isMeasuring(): boolean {
     return this.isSubscribed && this.connectedDeviceId !== null;
   }
 
-  async disconnect(): Promise<void> {
-    const connectedId = this.connectedDeviceId;
-    if (!connectedId) return;
+  /**
+   * 특정 디바이스 연결 해제. deviceId 생략 시 primary(마지막 연결) 디바이스 해제.
+   * 모든 연결 해제 시 disconnectAll() 사용.
+   */
+  async disconnect(deviceId?: string): Promise<void> {
+    const id = deviceId ?? this.primaryDeviceId;
+    if (!id || !this.connectedDevices.has(id)) return;
 
+    const entry = this.connectedDevices.get(id)!;
     try {
-      // 측정 중이면 먼저 중지
-      if (this.isSubscribed) {
-        logger.ble('BLEService', '연결 해제 전 측정 중지', {deviceId: connectedId});
-        await this.stopMeasurement();
+      if (entry.isSubscribed) {
+        logger.ble('BLEService', '연결 해제 전 측정 중지', {deviceId: id});
+        await this.stopMeasurement(id);
       }
-
-      // 백엔드에 세션 종료 (혹시 남아있을 수 있음)
-      if (this.currentSessionId) {
+      if (entry.currentSessionId) {
         try {
-          await backendApiService.stopSession(connectedId, 'manual_disconnect');
-          this.currentSessionId = null;
-          logger.ble('BLEService', '백엔드 세션 종료');
+          await backendApiService.stopSession(id, 'manual_disconnect');
+          entry.currentSessionId = null;
         } catch (error) {
           logger.bleError('disconnect - backend session stop', error);
         }
       }
-
-      // Notification 폴링 중지
       backendNotificationService.stopPolling();
-      // 구독 중지
-      if (this.isSubscribed) {
-        const peripheralInfo = await BleManager.retrieveServices(
-          connectedId,
-        );
-        if (peripheralInfo.services && peripheralInfo.characteristics) {
-          const characteristicsByService = (peripheralInfo as any).characteristics || {};
-          for (const service of peripheralInfo.services) {
-            const characteristics = characteristicsByService[service.uuid];
-            if (characteristics) {
-              for (const characteristic of characteristics) {
-                if (
-                  characteristic.properties.Notify ||
-                  characteristic.properties.Indicate
-                ) {
-                  await BleManager.stopNotification(
-                    connectedId,
-                    service.uuid,
-                    characteristic.uuid,
-                  );
-                }
-              }
-            }
-          }
-        }
-        this.isSubscribed = false;
-      
-      // ⚠️ 중요: 연결 해제 시 데이터 초기화
+      entry.monitorSubscription?.remove();
+      entry.monitorSubscription = null;
+      entry.isSubscribed = false;
+      entry.disconnectSubscription?.remove();
+      if (entry.device) {
+        try {
+          await entry.device.cancelConnection();
+        } catch (_) {}
+      } else if (this.manager) {
+        await this.manager.cancelDeviceConnection(id);
+      }
+      this.connectedDevices.delete(id);
+      this.deviceBufferStates.delete(id);
+      if (this.primaryDeviceId === id) {
+        this.primaryDeviceId = this.connectedDevices.size > 0 ? this.connectedDevices.keys().next().value ?? null : null;
+      }
       const dispatch = getBLEDispatch();
       if (dispatch) {
+        dispatch({type: 'REMOVE_CONNECTED_DEVICE', payload: id});
         dispatch({
           type: 'UPDATE_DATAS',
-          payload: {
-            hr: undefined,
-            spo2: undefined,
-            temp: undefined,
-            battery: undefined,
-          },
+          payload: {deviceId: id, hr: undefined, spo2: undefined, temp: undefined, battery: undefined},
         });
-        dispatch({type: 'SET_MEASURING', payload: false});
+        dispatch({type: 'SET_MEASURING_DEVICE', payload: {deviceId: id, measuring: false}});
+        if (this.connectedDevices.size === 0) {
+          dispatch({type: 'SET_CONNECTED', payload: false});
+          dispatch({type: 'SET_DEVICE_ID', payload: null});
+          dispatch({type: 'SET_MEASURING', payload: false});
+        } else {
+          dispatch({type: 'SET_DEVICE_ID', payload: this.primaryDeviceId});
+        }
       }
-      }
-
-      await BleManager.disconnect(connectedId);
-      const deviceId = connectedId;
-      this.connectedDeviceId = null;
-      
-      // 수동 연결 해제 시에만 저장된 디바이스 ID 삭제 (자동 재연결 방지)
-      // 백그라운드에서 연결이 끊어진 경우는 ID를 유지하여 자동 재연결 가능
-      // 여기서는 연결 해제 시 ID를 유지 (자동 재연결을 위해)
-      // 완전히 삭제하려면: await removeConnectedDeviceId();
-
-      // 데이터 버퍼 초기화
-      this.dataBufferRef = [];
-      this.pendingDataRef = null;
-      this.metricsDataRef = null;
-
-      if (this.callbacks.onDeviceDisconnected) {
-        this.callbacks.onDeviceDisconnected(deviceId);
-      }
-      
-      // handleDisconnectPeripheral에서도 호출될 수 있으므로 여기서는 호출하지 않음
-      // notificationService.deviceDisconnected(this.petName);
+      if (this.callbacks.onDeviceDisconnected) this.callbacks.onDeviceDisconnected(id);
     } catch (error) {
       console.error('Disconnection error:', error);
+    }
+  }
+
+  /** 모든 BLE 디바이스 연결 해제 */
+  async disconnectAll(): Promise<void> {
+    const ids = Array.from(this.connectedDevices.keys());
+    for (const id of ids) {
+      await this.disconnect(id);
     }
   }
 
@@ -1410,29 +1320,23 @@ class BLEService {
         return false;
       }
 
-      // 연결 상태 확인
-      if (Platform.OS === 'android') {
-        const isConnected = await BleManager.isPeripheralConnected(deviceId, []);
-        if (!isConnected) {
-          logger.warn('BLEService', '디바이스가 연결되지 않아 명령 전송 실패', {
-            deviceId,
-            text,
-          });
-          return false;
-        }
+      const manager = this.manager;
+      if (!manager) return false;
+      const isConnected = await manager.isDeviceConnected(deviceId);
+      if (!isConnected) {
+        logger.warn('BLEService', '디바이스가 연결되지 않아 명령 전송 실패', { deviceId, text });
+        return false;
       }
 
-      const textBytes: number[] = Array.from(text, (char: string) =>
-        char.charCodeAt(0),
-      );
+      const base64Value = Buffer.from(text, 'utf-8').toString('base64');
+      logger.ble('BLEService', 'BLE 명령 전송', { deviceId, command: text });
 
-      logger.ble('BLEService', 'BLE 명령 전송', {
+      await manager.writeCharacteristicWithResponseForDevice(
         deviceId,
-        command: text,
-        bytes: textBytes,
-      });
-
-      await BleManager.write(deviceId, SERVICE_UUID, CHARACTERISTIC_UUID_TX, textBytes);
+        SERVICE_UUID,
+        CHARACTERISTIC_UUID_TX,
+        base64Value,
+      );
       
       logger.bleSuccess('sendTextToDevice', {
         deviceId,
@@ -1440,215 +1344,68 @@ class BLEService {
       });
       
       return true;
-    } catch (error) {
-      logger.bleError('sendTextToDevice', {error, deviceId, command: text});
+    } catch (error: unknown) {
+      const err = error as { message?: string; errorCode?: number };
+      const msg = String(err?.message ?? '');
+      const isDisconnect =
+        msg.includes('disconnected') || err?.errorCode === 201;
+      if (isDisconnect) {
+        if (__DEV__) {
+          logger.ble('BLEService', '명령 전송 스킵 (디바이스 연결 해제됨)', {
+            deviceId,
+            command: text.replace(/\r\n$/, ''),
+          });
+        }
+        return false;
+      }
+      logger.bleError('sendTextToDevice', { error, deviceId, command: text });
       return false;
     }
   }
 
-  private handleUpdateValueForCharacteristic(data: BleManagerDidUpdateValueForCharacteristicEvent) {
-    // 빠른 필터링: 연결되지 않은 상태나 구독되지 않은 상태에서는 조용히 무시
-    // 백그라운드에서도 데이터 수신 가능하도록 AppState 체크 제거
-    if (!this.connectedDeviceId) {
-      // 연결되지 않은 상태에서는 조용히 무시
-      return;
-    }
-    
-    // isSubscribed 체크 완화 (참고 코드처럼 notification이 시작되면 데이터 수신)
-    if (!this.isSubscribed) {
-      // 디버깅: notification이 시작되지 않았으면 로그 출력 (1초에 한 번만)
-      const now = Date.now();
-      if (!this.lastErrorTime || now - this.lastErrorTime > 1000) {
-        this.lastErrorTime = now;
-        console.warn('⚠️ Notification이 시작되지 않아 데이터를 받을 수 없습니다. isSubscribed:', this.isSubscribed);
-      }
-      return;
-    }
+  /**
+   * Notify로만 데이터 수신하므로 GATT Read는 사용하지 않음 (호환용 no-op).
+   */
+  async readGattCharacteristicForData(): Promise<boolean> {
+    return false;
+  }
 
-    // 데이터 검증
-    if (!data || !data.value) {
-      return;
-    }
+  /** react-native-ble-plx: monitor 콜백에서 오는 base64 값 처리. deviceId는 어느 디바이스에서 온 데이터인지. */
+  private handleNotifyValue(base64Value: string, deviceId?: string) {
+    const id = deviceId ?? this.primaryDeviceId;
+    if (!id) return;
+    const entry = this.connectedDevices.get(id);
+    if (!entry?.isSubscribed) return;
 
+    if (!base64Value || base64Value.length === 0) return;
+
+    const buf = this.getBufferState(id);
     try {
-      const value: any = (data as any).value;
-      
-      // 참고 코드처럼: Buffer.from(value, 'base64').toString('utf-8')
-      // 참고 코드: const decodedValue = Buffer.from(value, 'base64').toString('utf-8');
-      let decodedValue: string;
-      
-      // 참고 코드 방식: value를 직접 base64 디코딩 시도
-      try {
-        // value가 문자열이면 직접 base64 디코딩
-        if (typeof value === 'string') {
-          decodedValue = Buffer.from(value, 'base64').toString('utf-8');
-          console.log('🔍 [참고 코드] 문자열 base64 디코딩:', decodedValue.substring(0, 50));
-        } 
-        // value가 바이트 배열이면 먼저 base64 문자열로 변환 후 디코딩
-        else if (Array.isArray(value) || value instanceof Uint8Array) {
-          const bytes = Array.isArray(value) ? value : Array.from(value);
-          // 바이트 배열을 base64 문자열로 변환
-          const base64String = Buffer.from(bytes).toString('base64');
-          // base64 디코딩
-          decodedValue = Buffer.from(base64String, 'base64').toString('utf-8');
-          console.log('🔍 [참고 코드] 바이트 배열 → base64 → 디코딩:', decodedValue.substring(0, 50));
-        } 
-        // ArrayBuffer인 경우
-        else if (value instanceof ArrayBuffer) {
-          const bytes = new Uint8Array(value);
-          const base64String = Buffer.from(bytes).toString('base64');
-          decodedValue = Buffer.from(base64String, 'base64').toString('utf-8');
-          console.log('🔍 [참고 코드] ArrayBuffer → base64 → 디코딩:', decodedValue.substring(0, 50));
-        } 
-        else {
-          console.warn('⚠️ [참고 코드] 알 수 없는 타입:', typeof value);
-          return;
-        }
-      } catch (decodeError) {
-        // base64 디코딩 실패 시 바이트 배열을 직접 문자열로 변환 시도
-        console.warn('⚠️ [참고 코드] base64 디코딩 실패, 직접 변환 시도:', decodeError);
-        if (Array.isArray(value) || value instanceof Uint8Array) {
-          const bytes = Array.isArray(value) ? value : Array.from(value);
-          decodedValue = String.fromCharCode(...(bytes as number[]));
-          console.log('🔍 [참고 코드] 직접 문자열 변환:', decodedValue.substring(0, 50));
-        } else if (value instanceof ArrayBuffer) {
-          const bytes = new Uint8Array(value);
-          decodedValue = String.fromCharCode(...Array.from(bytes));
-          console.log('🔍 [참고 코드] ArrayBuffer 직접 변환:', decodedValue.substring(0, 50));
-        } else if (typeof value === 'string') {
-          decodedValue = value;
-          console.log('🔍 [참고 코드] 원본 문자열 사용:', decodedValue.substring(0, 50));
-        } else {
-          console.error('❌ [참고 코드] 디코딩 불가능:', typeof value);
-          return;
-        }
-      }
-      
-      if (!decodedValue || decodedValue.length === 0) {
-        console.warn('⚠️ [참고 코드] 디코딩 결과가 비어있음');
-        return;
-      }
-      
-      // 🔍 진단용 상세 로깅 (5개 값 수신 여부 확인)
-      const decodedLength = decodedValue.length;
-      const hasNewline = decodedValue.includes('\n');
-      const hasCarriageReturn = decodedValue.includes('\r');
-      const hasSemicolon = decodedValue.includes(';');
-      const commaCount = (decodedValue.match(/,/g) || []).length;
-      const fullValue = decodedValue; // 전체 값 저장
-      
-      // 원본 데이터 정보
-      const originalType = typeof value;
-      const originalLength =
-        Array.isArray(value) || value instanceof Uint8Array
-          ? (Array.isArray(value) ? value.length : value.length)
-          : value instanceof ArrayBuffer
-            ? value.byteLength
-            : typeof value === 'string'
-              ? value.length
-              : 0;
-      
-      // ✅ BLE로 받은 원본 데이터를 그대로 콘솔에 출력
-      console.log('📥 [BLE 원본 데이터 - 그대로 출력]', {
-        rawValue: value, // 원본 바이트 배열/버퍼
-        decodedValue: decodedValue, // 디코딩된 문자열 전체
-        type: originalType,
-        length: originalLength,
-        decodedLength,
-        commaCount,
-        hasNewline,
-        hasCarriageReturn,
-        hasSemicolon,
-        preview: decodedValue.substring(0, 100),
-      });
-      
-      // 🔍 진단 로그 (5개 값 수신 여부 확인용)
-      console.log('🔍 [BLE 수신] 원본 데이터:', {
-        type: originalType,
-        length: originalLength,
-        decodedLength,
-        commaCount,
-        hasNewline,
-        hasCarriageReturn,
-        hasSemicolon,
-        preview: decodedValue.substring(0, 100),
-        fullValue: decodedValue, // ✅ 전체 값 출력
-        rawValue: value, // ✅ 원본 값 출력
-      });
-      
-      // 5개 값 패턴 감지 (쉼표 4개 = 5개 값)
-      if (commaCount === 4) {
-        console.log('✅✅✅ [BLE 수신] 5개 값 패턴 감지! (쉼표 4개)');
-        console.log('✅✅✅ [BLE 수신] 전체 값:', decodedValue);
-        const values = decodedValue.split(',');
-        console.log('✅✅✅ [BLE 수신] 값 분리:', values);
-        console.log('✅✅✅ [BLE 수신] 파싱된 값:', {
-          value1: values[0]?.trim(),
-          value2: values[1]?.trim(),
-          value3: values[2]?.trim(),
-          value4: values[3]?.trim(),
-          value5: values[4]?.trim(),
-        });
-      } else if (commaCount === 2) {
-        console.log('📊 [BLE 수신] 3개 값 패턴 (쉼표 2개) - 5개 값이 아님');
-        console.log('📊 [BLE 수신] 3개 값:', decodedValue.split(','));
-      } else {
-        console.warn('⚠️ [진단] 예상치 못한 쉼표 개수:', commaCount, '전체 값:', decodedValue);
-        console.warn('⚠️ [진단] 값 분리:', decodedValue.split(','));
-      }
-      
-      // 디코딩 결과 검증
-      if (!decodedValue || decodedValue.length === 0) {
-        return;
-      }
+      const decodedValue = Buffer.from(base64Value, 'base64').toString('utf-8');
+      if (!decodedValue || decodedValue.length === 0) return;
 
-      // 🔍 MTU 분할 대응: 개행/캐리지리턴으로 레코드 구분 시도
-      // 여러 레코드가 하나의 notify에 포함될 수 있음
       let records: string[] = [];
-      if (hasNewline) {
+      if (decodedValue.includes('\n')) {
         records = decodedValue.split('\n').filter(r => r.trim().length > 0);
-        console.log('🔍 [진단] 개행으로 분리된 레코드 개수:', records.length);
-      } else if (hasCarriageReturn) {
+      } else if (decodedValue.includes('\r')) {
         records = decodedValue.split('\r').filter(r => r.trim().length > 0);
-        console.log('🔍 [진단] 캐리지리턴으로 분리된 레코드 개수:', records.length);
-      } else if (hasSemicolon) {
+      } else if (decodedValue.includes(';')) {
         records = decodedValue.split(';').filter(r => r.trim().length > 0);
-        console.log('🔍 [진단] 세미콜론으로 분리된 레코드 개수:', records.length);
       } else {
-        // 구분자가 없으면 전체를 하나의 레코드로 처리
         records = [decodedValue];
       }
-      
-      // 🔍 MTU 분할 대응: 누적 버퍼 추가 (조각 수신 대응)
-      if (!this.notifyBuffer) {
-        this.notifyBuffer = '';
-      }
-      
-      // 각 레코드 처리
+
       for (const record of records) {
-        // 조각이 완전하지 않을 수 있으므로 버퍼에 누적
-        this.notifyBuffer += record;
-        
-        // 완전한 레코드인지 확인 (쉼표로 구분된 숫자 형식)
-        const trimmed = this.notifyBuffer.trim();
+        buf.notifyBuffer += record;
+        const trimmed = buf.notifyBuffer.trim();
         if (trimmed.length > 0 && (trimmed.match(/,/g) || []).length >= 2) {
-          // 최소 3개 값 이상이면 파싱 시도
           const parsed = this.parseRecord(trimmed);
           if (parsed) {
-            this.notifyBuffer = ''; // 버퍼 초기화
-            // 파싱된 데이터 처리 (아래 로직으로 이동)
-            this.processParsedData(parsed);
-          } else {
-            // 파싱 실패 시 버퍼 유지 (다음 notify에서 완성될 수 있음)
-            console.warn('⚠️ [진단] 레코드 파싱 실패, 버퍼 유지:', trimmed.substring(0, 50));
+            buf.notifyBuffer = '';
+            this.processParsedData(parsed, id);
           }
-        } else {
-          // 아직 완전하지 않은 조각
-          console.log('🔍 [진단] 불완전한 조각, 버퍼에 누적:', trimmed.substring(0, 50));
         }
       }
-      
-      // 새로운 파싱 로직 사용 완료
       return;
     } catch (error) {
       if (__DEV__) {
@@ -1668,6 +1425,51 @@ class BLEService {
     }
   }
   
+  /**
+   * GATT 특성 값(바이트 배열 또는 문자열)을 UTF-8 문자열로 디코딩
+   * read()는 number[] 반환, onDidUpdateValueForCharacteristic은 플랫폼별 형식
+   */
+  private decodeGattValueToStr(value: number[] | string | Uint8Array | ArrayBuffer | null | undefined): string | null {
+    if (value == null) return null;
+    try {
+      if (typeof value === 'string') return value;
+      const bytes = Array.isArray(value) ? value : value instanceof Uint8Array ? Array.from(value) : new Uint8Array(value as ArrayBuffer);
+      if (bytes.length === 0) return null;
+      return Buffer.from(bytes).toString('utf-8');
+    } catch {
+      try {
+        const bytes = Array.isArray(value) ? value : Array.from(new Uint8Array((value as ArrayBuffer)));
+        return String.fromCharCode(...(bytes as number[]));
+      } catch {
+        return null;
+      }
+    }
+  }
+
+  /**
+   * GATT로 받은 디코딩된 문자열을 레코드 단위로 나누어 파싱 후 processParsedData로 전달
+   * (Notify 수신 또는 GATT Read 결과 공통 처리)
+   */
+  private processDecodedGattValue(decodedValue: string): void {
+    if (!decodedValue || decodedValue.length === 0) return;
+    const hasNewline = decodedValue.includes('\n');
+    const hasCr = decodedValue.includes('\r');
+    const hasSemicolon = decodedValue.includes(';');
+    const records = hasNewline
+      ? decodedValue.split('\n').filter(r => r.trim().length > 0)
+      : hasCr
+        ? decodedValue.split('\r').filter(r => r.trim().length > 0)
+        : hasSemicolon
+          ? decodedValue.split(';').filter(r => r.trim().length > 0)
+          : [decodedValue];
+    for (const record of records) {
+      const trimmed = record.trim();
+      if (trimmed.length === 0 || (trimmed.match(/,/g) || []).length < 2) continue;
+      const parsed = this.parseRecord(trimmed);
+      if (parsed) this.processParsedData(parsed);
+    }
+  }
+
   // 🔍 레코드 파싱 헬퍼 메서드
   private parseRecord(record: string): number[] | null {
     try {
@@ -1691,24 +1493,12 @@ class BLEService {
   }
   
   // 🔍 파싱된 데이터 처리 메서드
-  private processParsedData(parsedData: number[]) {
-    // ✅ BLE 수신 데이터 전체 로깅
-    console.log('📥 [BLE 수신] processParsedData 호출:', {
-      parsedData,
-      length: parsedData.length,
-      isSubscribed: this.isSubscribed,
-      deviceId: this.connectedDeviceId,
-      timestamp: new Date().toISOString(),
-    });
-    
-    // ⚠️ 중요: 측정 중이 아닐 때는 데이터를 처리하지 않음
-    if (!this.isSubscribed) {
-      if (__DEV__) {
-        console.log('⚠️ [BLE 수신] 측정 중이 아니므로 데이터를 무시합니다. isSubscribed:', this.isSubscribed);
-      }
-      return;
-    }
-    
+  private processParsedData(parsedData: number[], deviceId: string) {
+    const entry = this.connectedDevices.get(deviceId);
+    if (!entry?.isSubscribed) return;
+
+    const buf = this.getBufferState(deviceId);
+
     // 파싱 결과 검증
     if (!Array.isArray(parsedData) || parsedData.length === 0) {
       console.warn('⚠️ [BLE 수신] 파싱된 데이터가 비어있음');
@@ -1725,24 +1515,34 @@ class BLEService {
     }
 
     // 데이터 길이에 따른 분기 처리
-    console.log('🔍 [BLE 수신] 데이터 분기 처리:', {
-      length: parsedData.length,
-      values: parsedData,
-    });
-      
-      // 5개 값이 먼저 확인되도록 (참고 코드처럼)
-      if (parsedData.length === 5) {
-        console.log('✅ [BLE 수신] 5개 값 패턴 처리 시작:', parsedData);
-        
-        const metricsData = {
+    // 디바이스 형식: "1,50.43,8,0,0.00,7" → [type, sampling, hr, spo2, temp, battery]
+    // type: 1=실시간, 2=MVS 저장 데이터 | 샘플링 | hr(BPM) | 산소포화도(%) | 온도(°C) | 배터리(%)
+    if (__DEV__) {
+      console.log('🔍 [BLE 수신] 분기:', parsedData.length, '개 값');
+    }
+
+      let metricsData: { samplingRate: number; hr: number; spo2: number; temp: number; battery: number } | null = null;
+      if (parsedData.length >= 6) {
+        // 6개 값: type(1=실시간/2=MVS), 샘플링, hr, spo2, temp, battery (iOS Talktail 형식)
+        metricsData = {
+          samplingRate: parsedData[1],
+          hr: parsedData[2],
+          spo2: parsedData[3],
+          temp: parsedData[4],
+          battery: parsedData[5],
+        };
+      } else if (parsedData.length === 5) {
+        // 5개 값 (기존): 샘플링, hr, spo2, temp, battery
+        metricsData = {
           samplingRate: parsedData[0],
           hr: parsedData[1],
           spo2: parsedData[2],
           temp: parsedData[3],
           battery: parsedData[4],
         };
-        
-        console.log('✅ [BLE 수신] Metrics 데이터 생성:', metricsData);
+      }
+
+      if (metricsData) {
         
         // 데이터 유효성 검증 (범위 완화)
         const isValid = !isNaN(metricsData.hr) && !isNaN(metricsData.spo2) && 
@@ -1770,56 +1570,46 @@ class BLEService {
           }
         }
         
-        this.metricsDataRef = metricsData;
+        buf.metricsDataRef = metricsData;
+
+        if (metricsData.hr === 7) {
+          Toast.show({
+            type: 'error',
+            text1: '배터리 부족',
+            text2: '배터리 부족으로 전원이 꺼집니다.',
+            position: 'top',
+          });
+          this.disconnect(deviceId).catch(() => {});
+          apiService.patch(`/device/${encodeURIComponent(deviceId)}/status`, {status: 'offline'}).catch(() => {});
+          return;
+        }
 
         const dispatch = getBLEDispatch();
-        
-        // ⚠️ 중요: 측정 중일 때만 데이터를 dispatch (측정 중지 시 데이터 무시)
-        if (dispatch && this.isSubscribed) {
-          // ⚠️ 최적화: 동기적 dispatch로 즉시 UI 업데이트 (지연 최소화)
+        if (dispatch && entry.isSubscribed) {
           dispatch({
             type: 'UPDATE_DATAS',
             payload: {
+              deviceId,
               hr: metricsData.hr,
               spo2: metricsData.spo2,
               temp: metricsData.temp,
               battery: metricsData.battery,
             },
           });
-        } else if (__DEV__ && !this.isSubscribed) {
-          console.log('⚠️ [5개 값] 측정 중이 아니므로 데이터를 무시합니다.');
-        } else if (__DEV__ && !dispatch) {
-          console.error('❌ [5개 값] dispatch가 null입니다!');
         }
-        
-        // pending 데이터가 있으면 metrics와 함께 COLLECT_DATAS도 dispatch (서버 전송용)
-        // ⚠️ 중요: 측정 중일 때만 데이터를 수집
-        if (dispatch && this.pendingDataRef && this.isSubscribed) {
-          const collectedData = this.pendingDataRef;
-          this.pendingDataRef = null;
 
+        if (dispatch && buf.pendingDataRef && entry.isSubscribed) {
+          const collectedData = buf.pendingDataRef;
+          buf.pendingDataRef = null;
           const allDataPoints = collectedData.map(({data, timestamp}, index) => ({
             timestamp,
             ir: data[0],
             red: data[1],
             green: data[2],
-            // 첫 번째 DataPoint에만 metrics 데이터 포함 (참고 코드처럼)
             ...(index === 0 ? metricsData : {}),
           }));
-
-          dispatch({
-            type: 'COLLECT_DATAS',
-            payload: allDataPoints,
-          });
-
-          console.log('📦 250개 데이터 + Metrics COLLECT_DATAS dispatch 완료:', {
-            count: allDataPoints.length,
-            hasMetrics: true,
-            metrics: metricsData,
-          });
-
-          // metrics 데이터 초기화
-          this.metricsDataRef = null;
+          dispatch({type: 'COLLECT_DATAS', payload: allDataPoints});
+          buf.metricsDataRef = null;
         }
 
         // ⚠️ 최적화: 콜백 호출 최소화 (성능 개선)
@@ -1842,89 +1632,49 @@ class BLEService {
           }
         }
 
-        // 백엔드로 데이터 전송
-        this.sendDataToBackend(metricsData);
-
-        // 알림 체크
+        this.sendDataToBackend(metricsData, deviceId);
         notificationService.checkHeartRate(metricsData.hr, this.petName);
         notificationService.checkSpO2(metricsData.spo2, this.petName);
         notificationService.checkTemperature(metricsData.temp, this.petName);
         notificationService.checkBattery(metricsData.battery);
-        
-        return; // 5개 값 처리 완료
+        return;
       }
-      
-      // 3개 값: ir, red, green (참고 코드처럼)
-      // ⚠️ 중요: 측정 중일 때만 데이터 버퍼에 추가
-      if (parsedData.length === 3 && this.isSubscribed) {
+
+      if (parsedData.length === 3 && entry.isSubscribed) {
         const timestamp = Date.now();
-        this.dataBufferRef.push({
-          data: parsedData,
-          timestamp,
-        });
+        buf.dataBufferRef.push({data: parsedData, timestamp});
+        buf.irChartDataBufferRef.push(parsedData[0]);
 
-        // IR 데이터를 버퍼에 추가 (참고 코드처럼)
-        this.irChartDataBufferRef.push(parsedData[0]);
-
-        // IR 데이터를 실시간으로 그래프에 표시 (throttling: 30ms마다 배치 처리)
         const now = Date.now();
-        if (now - this.lastIrDispatchTime >= 30) {
-          if (this.irChartDataBufferRef.length > 0) {
-            const dataToSend = [...this.irChartDataBufferRef];
-            this.irChartDataBufferRef = [];
-            this.lastIrDispatchTime = now;
-
-            // IR 차트 데이터만 업데이트하는 별도 액션 사용 (참고 코드처럼)
-            // ⚠️ 중요: 측정 중일 때만 차트 데이터 업데이트
+        if (now - buf.lastIrDispatchTime >= 30) {
+          if (buf.irChartDataBufferRef.length > 0) {
+            const dataToSend = [...buf.irChartDataBufferRef];
+            buf.irChartDataBufferRef = [];
+            buf.lastIrDispatchTime = now;
             const dispatch = getBLEDispatch();
-            if (dispatch && this.isSubscribed) {
-              dispatch({
-                type: 'UPDATE_IR_CHART_DATA',
-                payload: dataToSend,
-              });
+            if (dispatch && entry.isSubscribed) {
+              dispatch({type: 'UPDATE_IR_CHART_DATA', payload: dataToSend});
             }
           }
         }
 
-        // 250개씩 모아서 처리 (참고 코드처럼)
-        if (this.dataBufferRef.length >= 250) {
-          const collectedData = this.dataBufferRef.slice();
-          this.dataBufferRef = [];
-
-          // metrics 데이터가 이미 있으면 바로 dispatch, 없으면 pending에 저장
-          // ⚠️ 중요: 측정 중일 때만 데이터 수집
+        if (buf.dataBufferRef.length >= 250) {
+          const collectedData = buf.dataBufferRef.slice();
+          buf.dataBufferRef = [];
           const dispatch = getBLEDispatch();
-          if (dispatch && this.isSubscribed) {
-            if (this.metricsDataRef) {
+          if (dispatch && entry.isSubscribed) {
+            if (buf.metricsDataRef) {
               const allDataPoints = collectedData.map(({data, timestamp}, index) => ({
                 timestamp,
                 ir: data[0],
                 red: data[1],
                 green: data[2],
-                // 첫 번째 DataPoint에만 metrics 데이터 포함 (참고 코드처럼)
-                ...(index === 0 ? this.metricsDataRef! : {}),
+                ...(index === 0 ? buf.metricsDataRef! : {}),
               }));
-
-              dispatch({
-                type: 'COLLECT_DATAS',
-                payload: allDataPoints,
-              });
-
-              console.log('📦 250개 데이터 수집 완료 (metrics 포함):', {
-                count: allDataPoints.length,
-                hasMetrics: true,
-                metrics: this.metricsDataRef,
-              });
-
-              // metrics 데이터 초기화
-              this.metricsDataRef = null;
+              dispatch({type: 'COLLECT_DATAS', payload: allDataPoints});
+              buf.metricsDataRef = null;
             } else {
-              // metrics 데이터가 아직 없으면 pending에 저장
-              this.pendingDataRef = collectedData;
-              console.log('📦 250개 데이터 수집 완료 (metrics 대기 중):', {
-                count: collectedData.length,
-                hasMetrics: false,
-              });
+              buf.pendingDataRef = collectedData;
             }
           }
         }
@@ -1974,10 +1724,10 @@ class BLEService {
       }
     }
 
-    // 백엔드로 데이터 전송
-    this.sendDataToBackend(metricsData);
+    // 백엔드로 데이터 전송 (deviceId는 processDataWithMetrics 호출 시 primary)
+    const deviceIdForSend = this.primaryDeviceId;
+    this.sendDataToBackend(metricsData, deviceIdForSend ?? undefined);
 
-    // 알림 체크
     notificationService.checkHeartRate(metricsData.hr, this.petName);
     notificationService.checkSpO2(metricsData.spo2, this.petName);
     notificationService.checkTemperature(metricsData.temp, this.petName);
@@ -1985,21 +1735,26 @@ class BLEService {
   }
 
   /**
-   * 백엔드로 데이터 전송 (디바운스 처리)
+   * 백엔드로 데이터 전송 (디바이스 → 앱 → 서버 → CSV 저장)
+   * 디바이스별 디바운스: 1초마다 디바이스별 최신 데이터만 서버로 전송
    */
-  private sendDataToBackend(metricsData: {
-    samplingRate: number;
-    hr: number;
-    spo2: number;
-    temp: number;
-    battery: number;
-  }) {
-    if (!this.connectedDeviceId || !this.userEmail || !this.petId) {
+  private sendDataToBackend(
+    metricsData: {
+      samplingRate: number;
+      hr: number;
+      spo2: number;
+      temp: number;
+      battery: number;
+    },
+    deviceId?: string,
+  ) {
+    const id = deviceId ?? this.primaryDeviceId;
+    if (!id || !this.userEmail || !this.petId) {
       return;
     }
 
-    // 큐에 추가
     this.dataSendQueue.push({
+      deviceId: id,
       hr: metricsData.hr,
       spo2: metricsData.spo2,
       temp: metricsData.temp,
@@ -2007,91 +1762,96 @@ class BLEService {
       samplingRate: metricsData.samplingRate,
     });
 
-    // 기존 타이머가 있으면 취소
     if (this.dataSendTimer) {
       clearTimeout(this.dataSendTimer);
     }
 
-    // 1초 후 일괄 전송 (디바운스)
     this.dataSendTimer = setTimeout(async () => {
       const queue = this.dataSendQueue.slice();
       this.dataSendQueue = [];
 
-      if (queue.length === 0) {
-        return;
+      if (queue.length === 0) return;
+
+      const byDevice = new Map<string, typeof queue[0]>();
+      for (const item of queue) {
+        byDevice.set(item.deviceId, item);
       }
 
-      // 가장 최신 데이터만 전송 (또는 평균값 계산 가능)
-      const latestData = queue[queue.length - 1];
-
-      try {
-        const deviceId = this.connectedDeviceId;
-        if (!deviceId) return;
-
-        await backendApiService.sendData({
-          userEmail: this.userEmail,
-          petName: this.petName,
-          petId: this.petId,
-          deviceId,
-          sessionId: this.currentSessionId || undefined,
-          ...latestData,
-        });
-      } catch (error) {
-        console.error('백엔드 데이터 전송 실패:', error);
-        // 실패한 데이터는 큐에 다시 추가하지 않음 (손실 허용)
+      for (const [did, item] of byDevice) {
+        try {
+          const entry = this.connectedDevices.get(did);
+          const sessionId = entry?.currentSessionId ?? undefined;
+          await backendApiService.sendData({
+            userEmail: this.userEmail,
+            petName: this.petName,
+            petId: this.petId,
+            deviceId: did,
+            sessionId,
+            hr: item.hr,
+            spo2: item.spo2,
+            temp: item.temp,
+            battery: item.battery,
+            samplingRate: item.samplingRate,
+          });
+        } catch (error) {
+          console.error('백엔드 데이터 전송 실패:', error);
+        }
       }
     }, 1000);
   }
 
-  private handleDisconnectPeripheral(data: BleDisconnectPeripheralEvent) {
+  private handleDeviceDisconnected(deviceId: string) {
     try {
-      // ✅ 허브(ESP32) 등 "BLEService가 연결한 디바이스가 아닌" peripheral의 disconnect 이벤트는 무시
-      // - BLEService는 Tailing(1:1) 디바이스 전용
-      // - 허브 프로비저닝/기타 BLE 연결에서 disconnect 이벤트가 섞여 들어오면
-      //   측정 데이터 초기화/알림 등이 오동작할 수 있음
-      if (!this.connectedDeviceId || data.peripheral !== this.connectedDeviceId) {
-        return;
+      const entry = this.connectedDevices.get(deviceId);
+      if (!entry) return;
+      entry.monitorSubscription?.remove();
+      entry.monitorSubscription = null;
+      entry.isSubscribed = false;
+      this.connectedDevices.delete(deviceId);
+      this.deviceBufferStates.delete(deviceId);
+      if (this.primaryDeviceId === deviceId) {
+        this.primaryDeviceId = this.connectedDevices.size > 0 ? this.connectedDevices.keys().next().value ?? null : null;
       }
-
-      console.log('Device disconnected:', data.peripheral);
-      this.dataBufferRef = [];
-      this.pendingDataRef = null;
-      this.metricsDataRef = null;
-      this.irChartDataBufferRef = [];
-      this.lastIrDispatchTime = 0;
-      this.connectedDeviceId = null;
-      this.isSubscribed = false;
-      
-      // ⚠️ 중요: 연결 해제 시 데이터 초기화
       const dispatch = getBLEDispatch();
       if (dispatch) {
-        dispatch({
-          type: 'UPDATE_DATAS',
-          payload: {
-            hr: undefined,
-            spo2: undefined,
-            temp: undefined,
-            battery: undefined,
-          },
-        });
-        dispatch({type: 'SET_MEASURING', payload: false});
+        dispatch({type: 'REMOVE_CONNECTED_DEVICE', payload: deviceId});
+        dispatch({type: 'UPDATE_DATAS', payload: {deviceId, hr: undefined, spo2: undefined, temp: undefined, battery: undefined}});
+        dispatch({type: 'SET_MEASURING_DEVICE', payload: {deviceId, measuring: false}});
+        if (this.connectedDevices.size === 0) {
+          dispatch({type: 'SET_CONNECTED', payload: false});
+          dispatch({type: 'SET_DEVICE_ID', payload: null});
+          dispatch({type: 'SET_MEASURING', payload: false});
+        } else {
+          dispatch({type: 'SET_DEVICE_ID', payload: this.primaryDeviceId});
+        }
       }
-      
-      if (this.callbacks.onDeviceDisconnected) {
-        this.callbacks.onDeviceDisconnected(data.peripheral);
-      }
+      if (this.callbacks.onDeviceDisconnected) this.callbacks.onDeviceDisconnected(deviceId);
       notificationService.deviceDisconnected(this.petName);
     } catch (error) {
-      console.error('handleDisconnectPeripheral error:', error);
+      console.error('handleDeviceDisconnected error:', error);
     }
   }
 
   isConnected(): boolean {
-    return this.connectedDeviceId !== null && this.isSubscribed;
+    return this.connectedDevices.size > 0;
   }
 
+  /** 단일 디바이스 연결 여부 (레거시: primary 또는 첫 연결) */
   getConnectedDeviceId(): string | null {
-    return this.connectedDeviceId;
+    return this.primaryDeviceId ?? (this.connectedDevices.size > 0 ? this.connectedDevices.keys().next().value ?? null : null);
+  }
+
+  /** 다중 BLE: 연결된 모든 디바이스 ID */
+  getConnectedDeviceIds(): string[] {
+    return Array.from(this.connectedDevices.keys());
+  }
+
+  isDeviceConnected(deviceId: string): boolean {
+    return this.connectedDevices.has(deviceId);
+  }
+
+  isDeviceMeasuring(deviceId: string): boolean {
+    return this.connectedDevices.get(deviceId)?.isSubscribed ?? false;
   }
 
   /**

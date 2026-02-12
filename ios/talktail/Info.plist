@@ -34,6 +34,8 @@
 		<true/>
 		<key>NSExceptionDomains</key>
 		<dict>
+			<key>192.168.0.13</key>
+			<string></string>
 			<key>172.20.10.2</key>
 			<string></string>
 			<key>192.168.0.23</key>

@@ -73,6 +73,14 @@ const menuItems = [
   //   bgColor: '#FFF4E6',
   // },
   {
+    id: 'hubList',
+    icon: Package,
+    title: '허브·디바이스 데이터',
+    subtitle: '허브/디바이스 목록 및 텔레메트리',
+    color: '#0ea5e9',
+    bgColor: '#E0F2FE',
+  },
+  {
     id: 'notifications',
     icon: Bell,
     title: '알림 설정',
@@ -177,6 +185,9 @@ export function MyPageScreen({ onAddToCart }: MyPageScreenProps) {
       // case 'payment':
       //   (navigation as any).navigate('PaymentMethods');
       //   break;
+      case 'hubList':
+        (navigation as any).navigate('HubList');
+        break;
       case 'notifications':
         (navigation as any).navigate('NotificationSettings');
         break;

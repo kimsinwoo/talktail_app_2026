@@ -10,6 +10,7 @@ import {
   Platform,
   Linking,
 } from 'react-native';
+import {Eye, EyeOff} from 'lucide-react-native';
 import {useIsFocused} from '@react-navigation/native';
 import {deviceStore} from '../store/deviceStore';
 import Toast from 'react-native-toast-message';
@@ -26,6 +27,7 @@ export function LoginScreen({onLoginSuccess, navigation}: LoginScreenProps) {
     password: '',
   });
   const [errors, setErrors] = useState<{[key: string]: string}>({});
+  const [showPassword, setShowPassword] = useState(false);
 
   const {
     login,
@@ -87,9 +89,13 @@ export function LoginScreen({onLoginSuccess, navigation}: LoginScreenProps) {
       if (!url.startsWith(prefix)) return;
       const q = url.indexOf('?');
       if (q === -1) return;
-      const params = new URLSearchParams(url.slice(q));
-      const code = params.get('code');
-      const state = params.get('state');
+      const query = url.slice(q + 1);
+      const params = Object.fromEntries(query.split('&').map(p => {
+        const [k, v] = p.split('=');
+        return [k, v ? decodeURIComponent(v) : ''];
+      }));
+      const code = params.code;
+      const state = params.state;
       if (code && state) handleGoogleOAuthCallback(code, state);
     },
     [handleGoogleOAuthCallback],
@@ -112,7 +118,7 @@ export function LoginScreen({onLoginSuccess, navigation}: LoginScreenProps) {
     const newErrors: {[key: string]: string} = {};
 
     if (!formData.id) {
-      newErrors.id = '아이디를 입력해주세요.';
+      newErrors.id = '이메일 또는 아이디를 입력해주세요.';
     }
 
     if (!formData.password) {
@@ -155,15 +161,15 @@ export function LoginScreen({onLoginSuccess, navigation}: LoginScreenProps) {
 
           <View style={styles.form}>
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>아이디</Text>
+              <Text style={styles.label}>이메일 또는 아이디</Text>
               <TextInput
                 style={[styles.input, errors.id && styles.inputError]}
                 value={formData.id}
                 onChangeText={text => {
                   setFormData(prev => ({...prev, id: text}));
-                  setErrors(prev => ({...prev, id: undefined}));
+                  setErrors(prev => ({...prev, id: ''}));
                 }}
-                placeholder="이메일을 입력하세요"
+                placeholder="이메일 또는 아이디를 입력하세요"
                 placeholderTextColor="#999999"
                 autoCapitalize="none"
               />
@@ -174,17 +180,25 @@ export function LoginScreen({onLoginSuccess, navigation}: LoginScreenProps) {
 
             <View style={styles.inputGroup}>
               <Text style={styles.label}>비밀번호</Text>
-              <TextInput
-                style={[styles.input, errors.password && styles.inputError]}
-                value={formData.password}
-                onChangeText={text => {
-                  setFormData(prev => ({...prev, password: text}));
-                  setErrors(prev => ({...prev, password: undefined}));
-                }}
-                placeholder="비밀번호를 입력하세요"
-                placeholderTextColor="#999999"
-                secureTextEntry
-              />
+              <View style={[styles.passwordRow, errors.password && styles.inputError]}>
+                <TextInput
+                  style={[styles.input, styles.passwordInput]}
+                  value={formData.password}
+                  onChangeText={text => {
+                    setFormData(prev => ({...prev, password: text}));
+                    setErrors(prev => ({...prev, password: ''}));
+                  }}
+                  placeholder="비밀번호를 입력하세요"
+                  placeholderTextColor="#999999"
+                  secureTextEntry={!showPassword}
+                />
+                <TouchableOpacity
+                  onPress={() => setShowPassword(prev => !prev)}
+                  style={styles.eyeButton}
+                  hitSlop={{top: 12, bottom: 12, left: 12, right: 12}}>
+                  {showPassword ? <EyeOff size={22} color="#666" /> : <Eye size={22} color="#666" />}
+                </TouchableOpacity>
+              </View>
               {errors.password && (
                 <Text style={styles.errorText}>{errors.password}</Text>
               )}
@@ -200,19 +214,6 @@ export function LoginScreen({onLoginSuccess, navigation}: LoginScreenProps) {
               activeOpacity={0.8}>
               <Text style={styles.submitButtonText}>
                 {loginLoading ? '로그인 중...' : '로그인'}
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[
-                styles.googleButton,
-                (loginLoading || googleLoginLoading) && styles.submitButtonDisabled,
-              ]}
-              onPress={onPressGoogleLogin}
-              disabled={loginLoading || googleLoginLoading}
-              activeOpacity={0.8}>
-              <Text style={styles.googleButtonText}>
-                {googleLoginLoading ? 'Google 로그인 중...' : 'Google로 로그인'}
               </Text>
             </TouchableOpacity>
 
@@ -297,6 +298,22 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     color: '#333333',
     width: '100%',
+  },
+  passwordRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    borderRadius: 8,
+    backgroundColor: '#FFFFFF',
+  },
+  passwordInput: {
+    flex: 1,
+    borderWidth: 0,
+    marginBottom: 0,
+  },
+  eyeButton: {
+    padding: 12,
   },
   inputError: {
     borderColor: '#FF3B30',

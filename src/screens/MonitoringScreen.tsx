@@ -40,6 +40,7 @@ import { telemetryService } from '../services/TelemetryService';
 import {
   type NormalizedTelemetry,
   getDisplayHR,
+  getHRDisplayLabel,
   isSpecialHRValue,
   getHRSpecialMessage,
 } from '../types/telemetry';
@@ -189,18 +190,7 @@ export function MonitoringScreen({
     };
   }, [selectedHub, isMeasuring, stopRequested]);
 
-  // ✅ 펫 선택 후 자동 측정 시작
-  useEffect(() => {
-    if (autoStart && petId && petName && !isMeasuring && !measurementLoading) {
-      // ✅ 잠시 대기 후 측정 시작 (화면 렌더링 완료 대기)
-      const timer = setTimeout(() => {
-        handleStartMeasurement();
-      }, 500);
-      return () => clearTimeout(timer);
-    }
-    return undefined;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoStart, petId, petName]);
+  // ✅ 측정은 사용자가 "측정 시작" 버튼을 눌렀을 때만 시작 (자동 측정 시작 없음)
 
   // ✅ parseTelemetryLine 함수는 이제 types/telemetry.ts의 normalizeTelemetryPayload로 대체됨
 
@@ -1361,7 +1351,7 @@ export function MonitoringScreen({
     {
       id: 'hr',
       title: '심박수',
-      value: heartRate ?? '--',
+      value: getHRDisplayLabel(heartRateRaw) ?? (heartRate != null ? String(Math.round(heartRate)) : '--'),
       unit: 'BPM',
       icon: Heart,
       color: '#F03F3F',
@@ -1791,14 +1781,12 @@ export function MonitoringScreen({
                       style={styles.petItem}
                       onPress={async () => {
                         setShowPetSelectModal(false);
-                        // ✅ 선택한 펫으로 이동 (navigation을 통해)
                         if (navigation) {
-                          // ✅ 펫 선택 후 해당 펫으로 이동하고 자동 측정 시작
                           (navigation as any).navigate('Monitoring', {
                             petId: pet.pet_code,
                             petName: pet.name,
                             petImage: undefined,
-                            autoStart: true, // ✅ 펫 선택 후 자동 측정 시작
+                            autoStart: false, // 측정은 "측정 시작" 버튼으로만 시작
                           });
                         }
                       }}

@@ -110,7 +110,6 @@ class HubSocketService {
       });
     }
     if (!set || set.size === 0) {
-      if (__DEV__) console.warn(`[HubSocketService] ⚠️ No listeners for event "${event}"`);
       return;
     }
     for (const cb of set) {
@@ -320,6 +319,42 @@ class HubSocketService {
       this.emitToLocal('MQTT_READY', payload);
     });
 
+    // ✅ 백엔드 REST/Socket 이벤트: 데이터 삭제·상태 업데이트·텔레메트리 생성
+    s.on('hub_data_deleted', (payload: any) => {
+      this.debugLog('hub_data_deleted', payload);
+      this.emitToLocal('hub_data_deleted', payload);
+    });
+    s.on('device_data_deleted', (payload: any) => {
+      this.debugLog('device_data_deleted', payload);
+      this.emitToLocal('device_data_deleted', payload);
+    });
+    s.on('hub_status_updated', (payload: any) => {
+      this.debugLog('hub_status_updated', payload);
+      const hubId = payload?.hubAddress ?? payload?.hub_address ?? null;
+      if (hubId && typeof payload?.status === 'string') {
+        this.hubStatus.set(hubId, payload.status);
+      }
+      this.emitToLocal('hub_status_updated', payload);
+    });
+    s.on('device_status_updated', (payload: any) => {
+      this.debugLog('device_status_updated', payload);
+      this.emitToLocal('device_status_updated', payload);
+    });
+    s.on('telemetry_created', (payload: any) => {
+      this.debugLog('telemetry_created', payload);
+      this.emitToLocal('telemetry_created', payload);
+    });
+    s.on('device_disconnected', (payload: any) => {
+      const hubId = payload?.hubId ?? payload?.hub_address ?? null;
+      const deviceMac = payload?.deviceMac ?? payload?.device_mac ?? null;
+      if (hubId && deviceMac) {
+        const current = this.connectedDevicesByHub.get(hubId) || [];
+        const next = current.filter((mac: string) => mac !== deviceMac);
+        this.applyConnectedDevices(hubId, next);
+      }
+      this.emitToLocal('device_disconnected', payload);
+    });
+
     // ✅ 백엔드에서 MQTT disconnected:mac 수신 시 전달 → 해당 디바이스 오프라인 처리
     s.on('DEVICE_DISCONNECTED', (payload: any) => {
       const hubId =
@@ -368,7 +403,7 @@ class HubSocketService {
     if (typeof (s as any).onAny === 'function') {
       (s as any).onAny((event: string, ...args: any[]) => {
         // 이미 위에서 등록한 이벤트는 중복 로깅 방지
-        if (!['connect', 'disconnect', 'connect_error', 'connected', 'CONTROL_ACK', 'CONTROL_RESULT', 'TELEMETRY', 'CONNECTED_DEVICES', 'MQTT_READY', 'HUB_ACTIVITY', 'DEVICE_DISCONNECTED'].includes(event)) {
+        if (!['connect', 'disconnect', 'connect_error', 'connected', 'CONTROL_ACK', 'CONTROL_RESULT', 'TELEMETRY', 'CONNECTED_DEVICES', 'MQTT_READY', 'HUB_ACTIVITY', 'DEVICE_DISCONNECTED', 'hub_data_deleted', 'device_data_deleted', 'hub_status_updated', 'device_status_updated', 'telemetry_created', 'device_disconnected'].includes(event)) {
           console.log(`[HubSocketService] 📥 Socket.IO Unknown Event: "${event}"`, {
             event,
             timestamp: new Date().toISOString(),

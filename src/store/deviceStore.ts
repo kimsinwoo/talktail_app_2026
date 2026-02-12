@@ -28,6 +28,7 @@ interface DeviceStore {
   changePasswordSuccess: boolean;
   signup: (params: {
     email: string;
+    username: string;
     password: string;
     name: string;
     postcode: string;
@@ -35,6 +36,7 @@ interface DeviceStore {
     detail_address: string;
     phone: string;
   }) => Promise<void>;
+  checkUsername: (username: string) => Promise<{available: boolean; message?: string}>;
   offSignupSuccess: () => void;
   offSignupError: () => void;
   login: (data: {id: string; password: string}) => Promise<void>; // id = email
@@ -73,13 +75,12 @@ export const deviceStore = create<DeviceStore>((set, get) => ({
   changePasswordError: null,
   changePasswordSuccess: false,
   // 원본(hub_project/back) 기준: /auth/register
-  signup: async ({email, password, name, postcode, address, detail_address, phone}) => {
+  signup: async ({email, username, password, name, postcode, address, detail_address, phone}) => {
     try {
       set({signupLoading: true, signupError: null, signupSuccess: false});
-      // ApiService.post는 기본적으로 { success, data } 형태면 data만 unwrap 해서 반환합니다.
       const response = await apiService.post<{token: string; user: {email: string; name: string}}>(
         '/auth/register',
-        {email, password, name, postcode, address, detail_address, phone},
+        {email, username: username.trim(), password, name, postcode, address, detail_address, phone},
       );
 
       const token = (response as any)?.token;
@@ -104,6 +105,24 @@ export const deviceStore = create<DeviceStore>((set, get) => ({
   offSignupError: () => {
     set({signupError: null});
   },
+  checkUsername: async (username: string) => {
+    const trimmed = username.trim();
+    if (!trimmed) return {available: false, message: '아이디를 입력해주세요.'};
+    if (!/^[a-zA-Z0-9_]{4,20}$/.test(trimmed)) {
+      return {available: false, message: '아이디는 4~20자, 영문/숫자/언더스코어만 사용 가능합니다.'};
+    }
+    try {
+      const res = await apiService.get<{available: boolean; message?: string}>(
+        '/auth/check-username',
+        {params: {username: trimmed}},
+      );
+      const data = res as {available?: boolean; message?: string};
+      return {available: !!data?.available, message: data?.message};
+    } catch (error: any) {
+      const msg = error.response?.data?.message || (error.message === 'Network Error' ? '네트워크를 확인해주세요.' : '중복 확인에 실패했습니다.');
+      return {available: false, message: msg};
+    }
+  },
   login: async ({id, password}) => {
     try {
       set({loginLoading: true, loginError: null, loginSuccess: false});
@@ -111,7 +130,7 @@ export const deviceStore = create<DeviceStore>((set, get) => ({
       // ApiService.post는 기본적으로 { success, data } 형태면 data만 unwrap 해서 반환합니다.
       const response = await apiService.post<{token: string; user: {email: string; name: string}}>(
         '/auth/login',
-        {email: id, password},
+        {loginId: id, password},
       );
 
       const token = (response as any)?.token;

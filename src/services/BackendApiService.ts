@@ -1,5 +1,6 @@
 import {apiService} from './ApiService';
 import {getBackendBaseUrl} from '../constants/api';
+import {getTokenString} from '../utils/storage';
 
 /**
  * 백엔드 API 응답 타입
@@ -133,11 +134,16 @@ class BackendApiService {
   ): Promise<ApiResponse<T>> {
     try {
       const url = `${getBackendBaseUrl()}${endpoint}`;
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      const token = await getTokenString();
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
       const config: any = {
         method,
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers,
       };
 
       if (params) {
@@ -155,7 +161,7 @@ class BackendApiService {
         method: config.method,
         headers: config.headers,
         body: config.data ? JSON.stringify(config.data) : undefined,
-      });
+      } as RequestInit);
 
       // 응답이 없거나 실패한 경우
       if (!response.ok) {
